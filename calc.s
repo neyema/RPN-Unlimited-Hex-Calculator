@@ -9,6 +9,8 @@ SYS_READ equ 0x03
 SYS_WRITE equ 0x04
 SYS_EXIT equ 0x01
 
+;Works?
+
 %macro errorPrompt 1
 	pushad
 	push dword %1
