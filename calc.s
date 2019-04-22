@@ -9,8 +9,6 @@ SYS_READ equ 0x03
 SYS_WRITE equ 0x04
 SYS_EXIT equ 0x01
 
-;Works?
-
 %macro errorPrompt 1
 	pushad
 	push dword %1
@@ -71,37 +69,21 @@ SYS_EXIT equ 0x01
 %endmacro
 
 %macro binarytoHexaChars 0  ;in dl the byte to be converted (edx clean), 4 bits per digit, result in ecx
-	mov eax, 0
-	mov eax, edx
-	shr eax, 4
-	cmp eax, 9
+	mov ecx, 0
+	mov ecx, edx
+	cmp ecx, 9
 	jle %%number
-	add eax, 55
-	jmp %%second
+	add ecx, 55
+	jmp %%endbinarytoHexaChars
 	%%number:
-		add eax, ASCII
-	%%second:
-		shl eax, 24
-		mov ecx, 0  ;will store the result
-		mov ecx, eax
-		mov eax, 0
-		shl dl, 4 ;keep the 4 bits of the second digits
-		shr dl, 4
-		mov eax, edx
-		cmp eax, 9
-		jle %%secondisnumber
-		add eax, 55
-		jmp %%endbinarytoHexaChars
-	%%secondisnumber:
-		add eax, ASCII
+		add ecx, ASCII
 	%%endbinarytoHexaChars:
-		shl eax, 16  ;to the left, near the first char
-		or ecx, eax  ;keep 2 chars
 %endmacro
 
 %macro popOperand 0
-	deb2:
-	mov eax, [currentNode]  ;maybe problematic cleaning the current node, maybe it's not the last node
+	mov dword eax, [stackPointer]
+	sub eax, 1  ;we want the last operand on stack
+	mov eax, [operandStack+eax]
 	push eax ;the parameter is address of the memory
 	call free
 	mov eax, [stackPointer]
@@ -124,6 +106,7 @@ section .data
   previousNode: dd 0  ;contains address of the node
   currentNode: dd 0  ;pointer to the node, holds the address to where the node start
 	inputLength: dd 0
+	charstoprint: db 0  ;place to store 2 bytes before printing
 
 section .text
 align 16
@@ -251,27 +234,45 @@ plus: ;pop two operands and push the sum of them
 	mov [stackPointer], ecx  ;update stackPointer (reduces it by 2)
 	;TODO: continue
 
-
 popAndPrint: ;pop one operand and print it's value to STDOUT
 	checkStackUnderflow 1
 	mov eax, [stackPointer]
-	sub eax, 1  ;because stack pointer counts what it's in the stack
+	sub eax, 1  ;because stack pointer is to the next empty slot
+	mov ebx, 0
+	mov ebx, [operandStack + eax]  ;pointer to the first node of the last operand
+.loop:
 	mov edx, 0
-	mov edx, [operandStack + eax] ;the pointer to the first node
-	mov byte dl, [edx]
+	mov byte dl, [ebx]
+	shr dl, 4
 	binarytoHexaChars  ;now in ecx the right byte
+	shl ecx, 24
 	mov eax, SYS_WRITE
 	mov	ebx, STDOUT		;file descriptor
-	mov	edx, 2	;message length
+	mov	dword edx, 1	;message length
 	int	0x80		;call kernel
-	.finishedprint:
-		mov eax, SYS_WRITE
-		mov	ebx, STDOUT		;file descriptor
-		mov ecx, '\n'
-		mov	dword edx, 1	;message length
-		int	0x80		;call kernel
-		popOperand
-		jmp main
+	;second char
+	mov byte dl, [ebx]
+	shl dl, 4
+	shr dl, 4
+	binarytoHexaChars  ;now in ecx the right byte
+	shl ecx, 24
+	mov eax, SYS_WRITE
+	mov	ebx, STDOUT		;file descriptor
+	mov	edx, 1	;message length
+	int	0x80		;call kernel
+
+
+	mov dword ebx, [ebx+1]  ;next
+	cmp ebx, 0
+	jg .loop
+.finishedprint:
+	mov eax, SYS_WRITE
+	mov	ebx, STDOUT		;file descriptor
+	mov ecx, '\n'
+	mov	dword edx, 1	;message length
+	int	0x80		;call kernel
+	popOperand
+	jmp main
 
 duplicate:
   ;push to the stack a copy of the top operand in the stack
@@ -320,7 +321,6 @@ duplicate:
 	mov [operandStack], edi       ;the first operand in the stack is the new one
 	ret
 
-
 power:
   ;X is the top operand, Y is the second operand. Compute X*(2^Y)
   ;if Y>200, it's an error and we should print error and leave the stack as is
@@ -364,7 +364,6 @@ numOf1Bits:
 		;WHEN EDX IS BIGGER THAN FF (hex), WE MAKE IT A NODE MAKE EDX 0. IN THE END, WE make
 		;THE SHEERIT A NODE AND INSERT IT
 		ret
-
 
 squareRoot:
   ;pop one operand from the stack, and push the result, only the integer part
