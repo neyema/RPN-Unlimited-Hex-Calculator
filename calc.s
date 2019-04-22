@@ -68,16 +68,32 @@ SYS_EXIT equ 0x01
 	%%endhexatoBinary:
 %endmacro
 
-%macro binarytoHexaChars 0  ;in dl the byte to be converted (edx clean), 4 bits per digit, result in ecx
-	mov ecx, 0
-	mov ecx, edx
-	cmp ecx, 9
+%macro binarytoHexaChars 0  ;in dl the byte to be converted (edx clean), 4 bits per digit, result in charstoprint
+	mov byte [charstoprint], 0
+	mov al, 0
+	mov al, dl
+	shr al, 4  ;the right 4 bits
+	cmp byte al, 9
 	jle %%number
-	add ecx, 55
-	jmp %%endbinarytoHexaChars
+	add byte al, 55
+	jmp %%second
 	%%number:
-		add ecx, ASCII
+		add byte al, ASCII
+	%%second:
+		mov byte [charstoprint], al
+		mov al, 0
+		mov al, dl
+		shl al, 4 ;keep the 4 bits of the second digits
+		shr al, 4
+		cmp byte al, 9
+		jle %%secondisnumber
+		add byte al, 55
+		jmp %%endbinarytoHexaChars
+	%%secondisnumber:
+		add byte al, ASCII
 	%%endbinarytoHexaChars:
+		mov byte [charstoprint+1], 0
+		mov byte [charstoprint+1], al
 %endmacro
 
 %macro popOperand 0
@@ -94,19 +110,20 @@ SYS_EXIT equ 0x01
 section .bss
   operandStack: resb STACK_SIZE*4  ;each element is pointer (4 bytes) to node
   buffer: resb INPUT_SIZE
+	charstoprint: resb 2 ;place to store 2 bytes before printing
 
 section .rodata
   calcPrompt: db "calc: ",0
   invalidInput: db "Error: Invalid Input!",10,0
   stackOverflow: db "Error: Operand Stack Overflow",10,0
   stackUnderflow: db "Error: Insufficient Number of Arguments on Stack",10,0
+	newLine: db "",10,0
 
 section .data
-  stackPointer: dd 0
+  stackPointer: dd 0  ;the index of the next empty slot in operand stack
   previousNode: dd 0  ;contains address of the node
   currentNode: dd 0  ;pointer to the node, holds the address to where the node start
-	inputLength: dd 0
-	charstoprint: db 0  ;place to store 2 bytes before printing
+	;inputLength: dd 0
 
 section .text
 align 16
@@ -170,7 +187,7 @@ endOfInput: ;the buffer is valid
   ;than connect the current node to the previous
   ;in that way, the digits at the start will be in the first node
   ;last node needs to be in previous node
-	mov dword [inputLength], ecx
+	;mov dword [inputLength], ecx
 createNode:
   cmp ecx, 0
   jg .twobytesfrombuffer
@@ -184,12 +201,12 @@ createNode:
 		pop eax
 		popad
     ;moving the 2 digits to the byte in the currentNode
-		hexatoBinary ecx ;after this, in dl the trasformed ASCII, the right 4 bytes
 		mov bl, 0
+		hexatoBinary ecx ;after this, in dl the trasformed ASCII, the right 4 bits
 		mov bl, dl
 		sub ecx, 1
 		hexatoBinary ecx
-		shl bl, 4
+		shl dl, 4
 		or bl, dl  ;now the 2 digits are connected
 		sub ecx, 1
 		mov eax, [currentNode]
@@ -243,32 +260,23 @@ popAndPrint: ;pop one operand and print it's value to STDOUT
 .loop:
 	mov edx, 0
 	mov byte dl, [ebx]
-	shr dl, 4
-	binarytoHexaChars  ;now in ecx the right byte
-	shl ecx, 24
-	mov eax, SYS_WRITE
-	mov	ebx, STDOUT		;file descriptor
-	mov	dword edx, 1	;message length
-	int	0x80		;call kernel
-	;second char
-	mov byte dl, [ebx]
-	shl dl, 4
-	shr dl, 4
-	binarytoHexaChars  ;now in ecx the right byte
-	shl ecx, 24
-	mov eax, SYS_WRITE
-	mov	ebx, STDOUT		;file descriptor
-	mov	edx, 1	;message length
-	int	0x80		;call kernel
-
-
-	mov dword ebx, [ebx+1]  ;next
-	cmp ebx, 0
+	binarytoHexaChars  ;now in charstoprint the right 2 bytes
+	mov dword [currentNode], ebx
+	pushad
+	mov dword eax, SYS_WRITE
+	mov ebx, STDOUT
+	mov ecx, charstoprint
+	mov edx, 2
+	int 0x80
+	popad
+	;mov dword ebx, ebx+1  ;in ebx, the address of next
+	add ebx, 1
+	cmp dword [ebx], 0
 	jg .loop
 .finishedprint:
 	mov eax, SYS_WRITE
 	mov	ebx, STDOUT		;file descriptor
-	mov ecx, '\n'
+	mov ecx, newLine
 	mov	dword edx, 1	;message length
 	int	0x80		;call kernel
 	popOperand
@@ -310,7 +318,7 @@ duplicate:
 		cmp [ebx + 1], esi
 		jne .nextNode
 	;edi holds the pointer to the first link of the duplicate number
-	mov ecx, stackPointer
+	mov dword ecx, stackPointer
 	;.makeRoom:
 	;	mov eax, [operandStack + 4*ecx]   ;eax holds the pointer to this operand
 	;	mov [operandStack + 4*(ecx+1)], eax   ;the next operand in the stack is like it's prev
@@ -318,7 +326,9 @@ duplicate:
 	;	cmp ecx, -1
 	;	jne .makeRoom
 	mov [operandStack + 4*ecx], edi       ;the first operand in the stack is the new one
-	add [stackPointer], 1                 ;we have one more operand in the stack now
+	mov eax, [stackPointer]
+	add eax, 1
+	add [stackPointer], eax                ;we have one more operand in the stack now
 	ret                                   ;GO HOME YOU PUNK! (now an amazing guitar solo by Dimebag is played)
 
 power:
@@ -422,8 +432,3 @@ numOf1Bits:
 
 squareRoot:
   ;pop one operand from the stack, and push the result, only the integer part
-
-read:
-  ;the number is in buffer, address 0 terminated
-  ;read and every two chars convert to byte, and malloc the node (5 bytes), and than loop to make a list, until '\n'
-  ;jmp main
