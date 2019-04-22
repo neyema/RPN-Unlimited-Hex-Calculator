@@ -311,15 +311,15 @@ duplicate:
 		jne .nextNode
 	;edi holds the pointer to the first link of the duplicate number
 	mov ecx, stackPointer
-	sub ecx, 1
-	.makeRoom:
-		mov eax, [operandStack + 4*ecx]   ;eax holds the pointer to this operand
-		mov [operandStack + 4*(ecx+1)], eax   ;the next operand in the stack is like it's prev
-		sub ecx, 1
-		cmp ecx, -1
-		jne .makeRoom
-	mov [operandStack], edi       ;the first operand in the stack is the new one
-	ret
+	;.makeRoom:
+	;	mov eax, [operandStack + 4*ecx]   ;eax holds the pointer to this operand
+	;	mov [operandStack + 4*(ecx+1)], eax   ;the next operand in the stack is like it's prev
+	;	sub ecx, 1
+	;	cmp ecx, -1
+	;	jne .makeRoom
+	mov [operandStack + 4*ecx], edi       ;the first operand in the stack is the new one
+	add [stackPointer], 1                 ;we have one more operand in the stack now
+	ret                                   ;GO HOME YOU PUNK! (now an amazing guitar solo by Dimebag is played)
 
 power:
   ;X is the top operand, Y is the second operand. Compute X*(2^Y)
@@ -331,20 +331,24 @@ powerMinus:
 
 numOf1Bits:
   ;pop one operand and push the number of 1 bits in the number
+	;The idea:
+	;WHEN EDX IS BIGGER THAN FF (hex), WE MAKE IT A NODE MAKE EDX 0. IN THE END, WE MAKE
+	;THE SHEERIT A NODE AND INSERT IT
 	checkStackUnderflow 1
 	checkStackOverflow
 	;If got here, we got at least 1 operand in the stack
 	mov eax, 0
 	mov ecx, [stackPointer]
 	mov eax, [operandStack + 4*ecx]  ;eax holds the pointer to the first node of the last inserted operand
-	sub ecx, 1
-	mov [stackPointer], ecx  ;update stackPointer (reduces it by 1)
-	mov ebx, [eax]
-	mov edx, 0   ;edx will be our counter of 1s
+	;sub ecx, 1
+	;mov [stackPointer], ecx  ;update stackPointer (reduces it by 1)
+	mov ebx, [eax]     ;ebx is the value of the first 4 bytes of the node itself
+	mov edi, 0         ;edi is the pointer to the first node of the counter
+	mov edx, 0         ;edx will be our counter of 1s
 	.loopUntill0:
-		shr ebx, 28
+		shr ebx, 24
 		;now in ebx we got only the number in binary
-		mov ecx, 4
+		mov ecx, 8
 		.loopThisLink:
 			shr ebx, 1
 			jc .addToCounter  ;if the carry is on, we shifted 1
@@ -352,6 +356,7 @@ numOf1Bits:
 			jmp .endLoopLink
 			.addToCounter:
 				add edx, 1
+				call .checkAndBuildLink
 				loop .loopThisLink
 				jmp .endLoopLink
 		.endLoopLink:
@@ -359,11 +364,61 @@ numOf1Bits:
 		mov esi, 0
 		cmp ebx, esi
 		jne .loopUntill0
-		;TODO: MAKE IT INSERTED TO OPERAND STACK
-		;TODO: CHANGE THE WHOLE THING SO IT WILL NOT BE HASOOM BY EDX SIZE
-		;WHEN EDX IS BIGGER THAN FF (hex), WE MAKE IT A NODE MAKE EDX 0. IN THE END, WE make
-		;THE SHEERIT A NODE AND INSERT IT
+		cmp edx, 0
+		je .checkNeed0     ;The counter is 0. We need to check if we need to insert a node or not
+		;if we got here, the counter is not 0 and we need to create a link
+		pushad   ;backup regisers
+		pushfd   ;backup EFLAGS
+		push 5
+		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+		popad
+		shl edx, 24             ;the begining of edx will be the number, and the rest will be 0
+		mov byte [eax], edx     ;value of edx, it's byte at most
+		mov [eax + 1], edi      ;the change the next link of this link
+		mov edi, eax            ;change the curr link to this link
+		.checkNeed0:
+			;We will create a node if it will be the only node, and it value will be 0
+			cmp [edi], 0
+			je .build0Link       ;if no other link inserted before, create a 0 link
+			jmp .endOfLastLink
+		.build0Link:
+			pushad   ;backup regisers
+			pushfd   ;backup EFLAGS
+			push 5
+			call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+			popad
+			mov byte [eax], 0     ;value 0
+			mov dword [eax + 1], 0     ;the next link will be 0 to
+			mov edi, eax                ;make edi point to the new link
+		.endOfLastLink:
+			;eax holds a pointer to the first link of the count
+			mov ecx, [stackPointer]
+			mov [operandStack + ecx*4], eax   ;insert it to the operand stack, instead of the prev number
 		ret
+		.checkAndBuildLink:
+			;pre: counter is in edx
+			;     pointer to the curr node is in edi
+			cmp edx, 11111111b     ;value of FF in hex
+			je .buildLink          ;we need to build a new link
+			ret                    ;if we dont need to build a new link, ret
+			.buildLink:
+				pushad   ;backup regisers
+				pushfd   ;backup EFLAGS
+				push 5
+				call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+				popad
+				mov byte [eax], 11111111b     ;FF in hex
+				cmp edi, 0       ;if it's the first link we ever inserted
+				je .firstLink
+				;if we got here, it's not the first link we ever inserted
+				mov [eax + 1], edi     ;change the pointer of the next link
+				mov edi, eax           ;change the curr link to be the last inserted link
+				jmp .endOfBuildLink
+				.firstLink:
+					mov dword [eax + 1], 0      ;there is no next for this link
+				.endOfBuildLink:
+				mov edx, 0
+				ret
 
 squareRoot:
   ;pop one operand from the stack, and push the result, only the integer part
