@@ -383,12 +383,12 @@ numOf1Bits:
 		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
 		popad
 		shl edx, 24             ;the begining of edx will be the number, and the rest will be 0
-		mov byte [eax], edx     ;value of edx, it's byte at most
+		mov [eax], dl     ;value of edx is byte at most, so it's fine using dl
 		mov [eax + 1], edi      ;the change the next link of this link
 		mov edi, eax            ;change the curr link to this link
 		.checkNeed0:
 			;We will create a node if it will be the only node, and it value will be 0
-			cmp [edi], 0
+			cmp edi, 0
 			je .build0Link       ;if no other link inserted before, create a 0 link
 			jmp .endOfLastLink
 		.build0Link:
