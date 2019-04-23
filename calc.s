@@ -40,7 +40,7 @@ SYS_EXIT equ 0x01
 
 %macro checkStackOverflow 0
   mov eax, 0
-  mov eax, [stackPointer]
+  mov dword eax, [stackPointer]
   cmp eax, STACK_SIZE
   jl %%endcheckStackOverflow
   errorPrompt stackOverflow
@@ -56,9 +56,9 @@ SYS_EXIT equ 0x01
   %%endcheckStackUnderflow:
 %endmacro
 
-%macro hexatoBinary 1
+%macro hexatoBinary 0  ;assume in ecx the index in buffer we want to convert
 	mov dl, 0
-	mov dl, [buffer+%1]
+	mov dl, [buffer+ecx]
 	cmp byte dl, 65
 	jge %%char
 	sub byte dl, ASCII
@@ -170,6 +170,7 @@ main:
   cmp word [buffer], 'sr'
   je squareRoot
   ;it's none of the above, so it's operand
+debug:
 	checkStackOverflow
   mov ecx, 0  ;stores input length
 checkBufferLoop:
@@ -181,50 +182,35 @@ checkBufferLoop:
   add ecx, 1
 	cmp ecx, eax  ;eax holds the return value of sys_read, = how many bytes read
   jle checkBufferLoop
-	;we can assume the input is not empty line, so ecx > 0
+	;we can assume the input is not empty line, so ecx >= 0
 endOfInput: ;the buffer is valid
-  ;we start from the end, build node from 2 bytes
-  ;than connect the current node to the previous
-  ;in that way, the digits at the start will be in the first node
-  ;last node needs to be in previous node
-	;mov dword [inputLength], ecx
-createNode:
-  cmp ecx, 0
-  jg .twobytesfrombuffer
-  ;special case where we need to add zero bytes to the left
-  ;and than continue to the 2bytesbuffer as usual
-  .twobytesfrombuffer:
-		pushad
-    push 5
-    call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
-    mov dword [currentNode], eax
-		pop eax
-		popad
-    ;moving the 2 digits to the byte in the currentNode
-		mov bl, 0
-		hexatoBinary ecx ;after this, in dl the trasformed ASCII, the right 4 bits
-		mov bl, dl
-		sub ecx, 1
-		hexatoBinary ecx
-		shl dl, 4
-		or bl, dl  ;now the 2 digits are connected
-		sub ecx, 1
-		mov eax, [currentNode]
-		mov byte [eax], bl
-	.connect:
-		mov ebx,0
-		mov ebx, [previousNode]  ;in ebx, the address of the previous node
-		mov eax, [currentNode]
-  	mov dword [eax+1], ebx  ;connect the current node to the previous
-  cmp ecx, 0
-  jg createNode
-;end of creating nodes, push it to operand stack
-  mov eax, [stackPointer]
-  mov ebx, [currentNode]  ;pointer to the fist node
-  mov [operandStack + eax*4], ebx
-	add eax, 1
-	mov [stackPointer], eax
-  jmp main
+  ;we start from the end, build node from 2 bytes, this is prev
+  ;than cretae current, connect the previos node to the current
+  ;in that way, the digits at the start will be in the last node
+	;now create first node
+	pushad
+	push 5
+	call malloc
+	mov [previousNode], eax ;in eax the pointer to the memory
+	popad
+	hexatoBinary ;now in dl the byte
+	mov eax, [previousNode]
+	mov byte [eax], dl
+	cmp ecx, 0
+	je pushOperand  ;was one digit, in dl the 4 right bytes are 0, it's cool!
+	sub ecx, 1
+	mov byte bl, dl
+	hexatoBinary
+	shl dl, 4
+	or bl, dl
+	mov byte [eax], dl
+	sub ecx, 1
+pushOperand: ;the next of previos node is 0 now (will change)
+	mov dword ebx, [stackPointer]
+	mov dword [operandStack+ebx], eax
+	add dword ebx, 1
+	mov [stackPointer], ebx
+	jmp main
 
 quit:   ;free all and quit
   mov ecx, STACK_SIZE
