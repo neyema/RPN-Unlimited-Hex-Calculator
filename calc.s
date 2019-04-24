@@ -207,6 +207,8 @@ createNextNode:
 	shl dl, 4
 	or bl, dl
 	mov byte [eax], bl
+.connect:
+	mov eax, [currentNode]
 	mov dword [previousNode+1], eax  ;connect, previous->next=current
 	jmp createNextNode
 
@@ -373,7 +375,7 @@ fillBuffer:
 loopcondition:
 	mov byte [buffer+ecx], al
 	sub ecx, 1
-	add dword ebx, 1  ;ebx <- next
+	mov dword ebx, [ebx+1] ;ebx<-next
 	cmp ecx, 0
 	jge fillBuffer
 	;now print
