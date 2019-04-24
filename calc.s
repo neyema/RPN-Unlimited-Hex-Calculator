@@ -246,7 +246,7 @@ plus: ;pop two operands and push the sum of them
 		je .lastInsertedOperand0
 		cmp dword [ebx + 1], 0      ;if the next one is empty
 		je .beforeLastInertedOperand0
-		;if we got here, both operands have the next link, and this link was already computed
+		;if we got here, both operands have the next link, and curr link was already computed
 		mov ecx, 0
 		mov edx, 0
 		mov eax, [eax + 1]    ;eax will hold a pointer to the next link in this list
@@ -261,7 +261,7 @@ plus: ;pop two operands and push the sum of them
 		jmp .sumLink
 
 	.lastInsertedOperand0:
-		;if it gets here, the list in ebx has a next, the list in eax doesn't
+		;if it gets here, the list in ebx maybe has a next, the list in eax doesn't
 		cmp edi, 0
 		je .stopSum   ;we have no point in continue summing anymore, because carry is 0
 		;TODO: what to do if carry is 1?
@@ -278,7 +278,7 @@ plus: ;pop two operands and push the sum of them
 			cmp dword [ebx + 1], 0   ;if it doesn't have a next
 			je .makeLinkWithCarry    ;make a next link with the carry
 			mov edx, 0
-			mov ebx, [ebx + 1]
+			mov ebx, [ebx + 1]      ;it sure does have a next
 			mov dl, [ebx]           ;move the numeric value of that link to dl
 			add edx, edi            ;add the carry to the numeric value
 			mov edi, edx
@@ -311,12 +311,14 @@ plus: ;pop two operands and push the sum of them
 		mov [ebx + 1], eax     ;now the next of the link in ebx is the list that eax holds
 		;TODO: FREE UNTILL EAX in it's list (included eax)
 		;handle the carry for curr link
-		mov edx, 0
-		mov dl, [ebx]           ;move the numeric value of that link to dl
-		add edx, edi            ;add the carry to the numeric value
-		mov edi, edx
-		shr edi, 8      	    ;so we can get the artifitial carry, edi now contains 00.....0 or 00.....1
-		mov [ebx], dl         ;now the link have the value of the sum of the carry and itself
+		;TODO: MAYBE THESE LINE ARE NEEDED?
+		;mov edx, 0
+		;mov dl, [ebx]           ;move the numeric value of that link to dl
+		;add edx, edi            ;add the carry to the numeric value
+		;mov edi, edx
+		;shr edi, 8      	    ;so we can get the artifitial carry, edi now contains 00.....0 or 00.....1
+		;mov [ebx], dl         ;now the link have the value of the sum of the carry and itself
+		mov ebx, [ebx + 1]       ;ebx now holds a pointer to it's next
 		.whileCarry1Again:
 			cmp edi, 0
 			je .stopSum   ;tere's no more carry
@@ -331,7 +333,6 @@ plus: ;pop two operands and push the sum of them
 			mov [ebx], dl         ;now the link have the value of the sum of the carry and itself
 			mov ebx, [ebx + 1]    ;ebx now points to the next link
 			jmp .whileCarry1Again
-		jmp .sumLink
 	.stopSum:
 		mov ecx, [stackPointer]
 		add ecx, 1
