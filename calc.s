@@ -212,13 +212,17 @@ createNextNode:
 
 quit:   ;free all and quit
   mov ecx, STACK_SIZE
-  sub ecx,1
+  sub ecx, 1
   .freeLoop:
     pushad   ;backup regisers
     pushfd   ;backup EFLAGS
     push dword [operandStack + 4*ecx]
     call free
-    loop .freeLoop
+		popad   ;backup regisers
+		popfd   ;backup EFLAGS
+    sub ecx, 1
+		cmp ecx, 0
+		jge .freeLoop
   mov dword eax, SYS_EXIT
   mov dword ebx, 0
   int 0x80
@@ -271,7 +275,7 @@ fillBuffer:
 loopcondition:
 	mov byte [buffer+ecx], al
 	sub ecx, 1
-	mov dword ebx, [ebx+1]
+	add dword ebx, 1  ;ebx <- next
 	cmp ecx, 0
 	jge fillBuffer
 	;now print
