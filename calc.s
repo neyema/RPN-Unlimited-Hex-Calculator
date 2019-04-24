@@ -68,34 +68,6 @@ SYS_EXIT equ 0x01
 	%%endhexatoBinary:
 %endmacro
 
-%macro binarytoHexaChars 0  ;in dl the byte to be converted (edx clean), 4 bits per digit, result in charstoprint
-	mov byte [charstoprint], 0
-	mov al, 0
-	mov al, dl
-	shr al, 4  ;the right 4 bits
-	cmp byte al, 9
-	jle %%number
-	add byte al, 55
-	jmp %%second
-	%%number:
-		add byte al, ASCII
-	%%second:
-		mov byte [charstoprint], al
-		mov al, 0
-		mov al, dl
-		shl al, 4 ;keep the 4 bits of the second digits
-		shr al, 4
-		cmp byte al, 9
-		jle %%secondisnumber
-		add byte al, 55
-		jmp %%endbinarytoHexaChars
-	%%secondisnumber:
-		add byte al, ASCII
-	%%endbinarytoHexaChars:
-		mov byte [charstoprint+1], 0
-		mov byte [charstoprint+1], al
-%endmacro
-
 %macro popOperand 0
 	mov dword eax, [stackPointer]
 	sub eax, 1  ;we want the last operand on stack
@@ -123,7 +95,7 @@ section .data
   stackPointer: dd 0  ;the index of the next empty slot in operand stack
   previousNode: dd 0  ;contains address of the node
   currentNode: dd 0  ;pointer to the node, holds the address to where the node start
-	;inputLength: dd 0
+	inputLastIndex: dd 0
 
 section .text
 align 16
@@ -170,7 +142,6 @@ main:
   cmp word [buffer], 'sr'
   je squareRoot
   ;it's none of the above, so it's operand
-debug:
 	checkStackOverflow
   mov ecx, 0  ;stores input length
 checkBufferLoop:
@@ -180,37 +151,64 @@ checkBufferLoop:
   je endOfInput
   checkBuffer ecx
   add ecx, 1
-	cmp ecx, eax  ;eax holds the return value of sys_read, = how many bytes read
-  jle checkBufferLoop
+	cmp ecx, INPUT_SIZE
+	jl checkBufferLoop
 	;we can assume the input is not empty line, so ecx >= 0
-endOfInput: ;the buffer is valid
+endOfInput: ;buffer is valid
   ;we start from the end, build node from 2 bytes, this is prev
-  ;than cretae current, connect the previos node to the current
+  ;than create current, connect the previos node to the current
   ;in that way, the digits at the start will be in the last node
+	sub ecx, 1
+	mov [inputLastIndex], ecx
 	;now create first node
 	pushad
 	push 5
 	call malloc
-	mov [previousNode], eax ;in eax the pointer to the memory
+	mov [currentNode], eax ;in eax the pointer to the memory
+	add esp, 4
 	popad
 	hexatoBinary ;now in dl the byte
-	mov eax, [previousNode]
+	sub ecx, 1
+	mov eax, [currentNode]
 	mov byte [eax], dl
 	cmp ecx, 0
-	je pushOperand  ;was one digit, in dl the 4 right bytes are 0, it's cool!
-	sub ecx, 1
+	jl pushOperand  ;was one digit, in dl the 4 right bytes are 0, it's cool!
 	mov byte bl, dl
 	hexatoBinary
+	sub ecx, 1
 	shl dl, 4
 	or bl, dl
-	mov byte [eax], dl
-	sub ecx, 1
+	mov byte [eax], bl
 pushOperand: ;the next of previos node is 0 now (will change)
 	mov dword ebx, [stackPointer]
 	mov dword [operandStack+ebx], eax
 	add dword ebx, 1
 	mov [stackPointer], ebx
-	jmp main
+createNextNode:
+	cmp ecx, 0
+	jl main
+	mov eax, [currentNode]
+	mov [previousNode], eax  ;prev = curr
+	pushad
+	push 5
+	call malloc
+	mov [currentNode], eax ;in eax the pointer to the memory
+	add esp, 4
+	popad
+	hexatoBinary ;now in dl the byte
+	sub ecx, 1
+	mov eax, [currentNode]
+	mov byte [eax], dl  ;moving to the node for the 'A' case, where need to insert '0A'
+	cmp ecx, 0
+	jl pushOperand  ;was one digit, in dl the 4 right bytes are 0, it's cool!
+	mov byte bl, dl
+	hexatoBinary
+	sub ecx, 1
+	shl dl, 4
+	or bl, dl
+	mov byte [eax], bl
+	mov dword [previousNode+1], eax  ;connect, previous->next=current
+	jmp createNextNode
 
 quit:   ;free all and quit
   mov ecx, STACK_SIZE
@@ -237,33 +235,56 @@ plus: ;pop two operands and push the sum of them
 	mov [stackPointer], ecx  ;update stackPointer (reduces it by 2)
 	;TODO: continue
 
+;ideas: 1. print the buffer, check if need to add 0 or numOf1Bits
+;2. fill the buffer from the inputLastIndex to the start according to the nodes, call SYS_WRITE with the buffer
+;3.using a loop, push to stack eax, which will contain the 2 relevant bytes
+;than, also in a loop, pop each register, and print the 2 first bytes in it
 popAndPrint: ;pop one operand and print it's value to STDOUT
 	checkStackUnderflow 1
 	mov eax, [stackPointer]
-	sub eax, 1  ;because stack pointer is to the next empty slot
-	mov ebx, 0
-	mov ebx, [operandStack + eax]  ;pointer to the first node of the last operand
-.loop:
-	mov edx, 0
-	mov byte dl, [ebx]
-	binarytoHexaChars  ;now in charstoprint the right 2 bytes
-	mov dword [currentNode], ebx
-	pushad
-	mov dword eax, SYS_WRITE
+	sub eax, 1
+	mov ebx, [operandStack+eax]  ;address to the first node
+	mov ecx, [inputLastIndex]
+fillBuffer:
+	mov byte dl, [ebx] ;in dl, 2 digits, each one 4 bits
+	mov byte al, 0
+	mov al, dl
+	shl al, 4  ;the left most 4 bits
+	shr al, 4
+	cmp byte al, 9
+	jle .number
+	add byte al, 55
+	jmp .second
+	.number:
+		add byte al, ASCII
+	.second:
+		mov byte [buffer+ecx], al
+		sub ecx, 1
+		mov byte al, dl
+		shr al, 4
+		cmp byte al, 9
+		jle .secondisnumber
+		add byte al, 55
+		jmp loopcondition
+	.secondisnumber:
+		add byte al, ASCII
+loopcondition:
+	mov byte [buffer+ecx], al
+	sub ecx, 1
+	mov dword ebx, [ebx+1]
+	cmp ecx, 0
+	jge fillBuffer
+	;now print
+	mov eax, SYS_WRITE
 	mov ebx, STDOUT
-	mov ecx, charstoprint
-	mov edx, 2
+	mov ecx, buffer
+	mov edx, [inputLastIndex]
+	add edx, 1
 	int 0x80
-	popad
-	;mov dword ebx, ebx+1  ;in ebx, the address of next
-	add ebx, 1
-	cmp dword [ebx], 0
-	jg .loop
-.finishedprint:
 	mov eax, SYS_WRITE
 	mov	ebx, STDOUT		;file descriptor
 	mov ecx, newLine
-	mov	dword edx, 1	;message length
+	mov	edx, 1	;message length
 	int	0x80		;call kernel
 	popOperand
 	jmp main
