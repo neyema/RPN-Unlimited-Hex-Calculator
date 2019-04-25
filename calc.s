@@ -102,6 +102,7 @@ section .data
   previousNode: dd 0  ;contains address of the node
   currentNode: dd 0  ;pointer to the node, holds the address to where the node start
 	inputLastIndex: dd 0
+	mallocHelper: dd 0       ;helper to all malloc functions, will hold pointers
 
 section .text
 align 16
@@ -198,7 +199,6 @@ createNextNode:
 	pushad
 	push 5
 	call malloc
-	deb:
 	mov [currentNode], eax ;in eax the pointer to the memory
 	add esp, 4
 	popad
@@ -369,8 +369,11 @@ duplicate:
 	pushfd   ;backup EFLAGS
 	push 5
 	call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
-;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
+	mov [mallocHelper], eax   ;pointer to malloced is in eax
+	add esp, 4
+	popfd
 	popad
+	mov eax, [mallocHelper]
 	mov edx, [stackPointer]
 	mov ebx, [operandStack + 4*edx]
 	mov edx, [ebx]
@@ -388,8 +391,11 @@ duplicate:
 		pushfd   ;backup EFLAGS
 		push 5
 		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
-;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
+		mov [mallocHelper], eax   ;pointer to malloced is in eax
+		add esp, 4
+		popfd
 		popad
+		mov eax, [mallocHelper]
 		mov [ecx + 1], eax   ;the next of the prev is this node
 		mov ecx, eax         ;the prev is now this
 		mov edx, [ebx]
@@ -410,11 +416,114 @@ duplicate:
 	mov eax, [stackPointer]
 	add eax, 1
 	add [stackPointer], eax                ;we have one more operand in the stack now
-	ret                                   ;GO HOME YOU PUNK! (now an amazing guitar solo by Dimebag is played)
+	jmp main                                   ;GO HOME YOU PUNK! (now an amazing guitar solo by Dimebag is played)
 
 power:
   ;X is the top operand, Y is the second operand. Compute X*(2^Y)
   ;if Y>200, it's an error and we should print error and leave the stack as is
+	checkStackUnderflow 2
+
+	mov eax, [stackPointer]
+	sub eax, 1    ;make stackPointer to be the index of the last inserted operand
+	mov ebx, [operandStack + 4*eax]   ;ebx has the pointer to X
+	sub eax, 1
+	mov ecx, [operandStack + 4*ecx]   ;ecx has the pointer to Y
+	cmp dword [ecx + 1], 0            ;if Y is bigger than 0xFF (0xFF > 200)
+	jne .error
+	mov ecx, [ecx]        ;now ecx holds the Y number
+	cmp ecx, 200
+	jg .error          ;if it's bigger than 200, we got an error! funnnnnn
+	;to recap: if we got here, ecx holds legal Y. ebx holds pointer to first link of X.
+	.shftLoop:
+		cmp ecx, 8
+		jle .ySmallerEq8
+		;Y>8 here
+		;IDEA: create a new link, insert it to X from left, and remove 8 from ecx
+		;allocate a new link:
+		pushad   ;backup regisers
+		pushfd   ;backup EFLAGS
+		push 5
+		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+		mov [mallocHelper], eax   ;pointer to malloced memory is in eax
+		add esp, 4
+		popfd
+		popad
+		mov eax, [mallocHelper]
+		mov dword [eax], 0         ;numeric value of the new link is 0
+		mov dword [eax + 1], ebx   ;next of this link is the first link in ebx's list
+		mov ebx, eax               ;the new first link in ebx's list is the new link we create (eax points to it)
+		sub ecx, 8
+		jmp .shftLoop
+		.ySmallerEq8:
+			;TODO: WRITE IT
+			;Y<= 8 here
+			;IDEA: shift left 1 every link, and pass carry to the next link
+			mov edi, ebx   ;edi holds a pointer to X first link
+			mov esi, 0     ;esi will be our artifitial carry
+			mov edx, [edi]
+			shl edx, 24
+			shr edx, 24
+			;now edx have only the numeric value of this link
+			shl edx, 1        ;shift it to do the power!
+			mov [edi], dl     ;change the value of this link
+			mov esi, dh       ;take the carry with me!
+			.loopEveryLink:
+				;when we get here, edi points to a link that has been shifted
+				;it's next hasn't been shifted yet
+				mov edx, [edi + 1]
+				mov edx, [edx]
+				shl edx, 24
+				shr edx, 24
+				;now edx have only the numeric value of this link
+				shl edx, 1        ;shift it to do the power!
+				add edx, esi      ;add the carry
+				mov eax, [edi + 1]
+				mov [eax], dl     ;change the value of this link
+				mov esi, dh       ;take the carry with me!
+				cmp dword [edi + 1], 0
+				je .checkForNewLink
+				mov edi, [edi + 1]   ;make edi point to the next link
+				jmp .loopEveryLink   ;go to the next link
+	.checkForNewLink:
+		;edi points to a link with no next
+		;esi holds the carry after we handled edi's shift
+		cmp esi, 0
+		je .endCheckForNewLink   ;we do no need to action
+		;if we got here, we have overflow. sucks.
+		;we will create a new link
+		pushad   ;backup regisers
+		pushfd   ;backup EFLAGS
+		push 5
+		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+		mov [mallocHelper], eax   ;pointer to malloced memory is in eax
+		add esp, 4
+		popfd
+		popad
+		mov eax, [mallocHelper]
+		mov byte [eax], 1   ;it's numeric value will be 1
+		mov dword [eax + 1], 0   ;it's next will be 0
+		mov [edi + 1], eax        ;the next of edi's link will be eax's link
+		.endCheckForNewLink:
+		sub ecx, 1                ;sub the number of shifts that left
+		cmp ecx, 0                ;if we got no more shifts to do
+		je .freeAndGoToMain
+		jmp .shftLoop
+	.freeAndGoToMain:
+		;TODO: FREE Y
+		;reduce stackPointer by 1 after we free Y
+		mov eax, [stackPointer]
+		sub eax
+		mov [stackPointer], eax
+		;now we will move the updated X's list (after the computation) to a new place
+		;in the stack. It will replace Y in it's place
+		mov ebx, [operandStack + 4*eax]   ;ebx points to X after the computation
+		sub eax   ;now eax is the right offset for Y's place
+		mov [operandStack + 4*eax], ebx    ;puck! no more Y. ONLY X.
+		jmp main
+	.error:
+		;TODO: WRITE ERROR
+		jmp main
+
 
 powerMinus:
   ;X is the top operand, Y is the second operand. Compute X*(2^(-Y))
@@ -427,17 +536,19 @@ numOf1Bits:
 	;WHEN EDX IS BIGGER THAN FF (hex), WE MAKE IT A NODE MAKE EDX 0. IN THE END, WE MAKE
 	;THE SHEERIT A NODE AND INSERT IT
 	checkStackUnderflow 1
-	checkStackOverflow
 	;If got here, we got at least 1 operand in the stack
 	mov eax, 0
 	mov ecx, [stackPointer]
+	sub ecx, 1
 	mov eax, [operandStack + 4*ecx]  ;eax holds the pointer to the first node of the last inserted operand
 	;sub ecx, 1
 	;mov [stackPointer], ecx  ;update stackPointer (reduces it by 1)
+	;mov dword [eax + 1], 2397654332          ;DEBUG ONLY!
 	mov ebx, [eax]     ;ebx is the value of the first 4 bytes of the node itself
 	mov edi, 0         ;edi is the pointer to the first node of the counter
 	mov edx, 0         ;edx will be our counter of 1s
 	.loopUntill0:
+		shl ebx, 24   ;added in debug
 		shr ebx, 24
 		;now in ebx we got only the number in binary
 		mov ecx, 8
@@ -463,9 +574,13 @@ numOf1Bits:
 		pushfd   ;backup EFLAGS
 		push 5
 		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
-;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
+		.deb:
+		mov [mallocHelper], eax   ;pointer to malloced is in eax
+		add esp, 4
+		popfd
 		popad
-		shl edx, 24             ;the begining of edx will be the number, and the rest will be 0
+		mov eax, [mallocHelper]
+		;shl edx, 24             ;the begining of edx will be the number, and the rest will be 0
 		mov [eax], dl     ;value of edx is byte at most, so it's fine using dl
 		mov [eax + 1], edi      ;the change the next link of this link
 		mov edi, eax            ;change the curr link to this link
@@ -479,29 +594,38 @@ numOf1Bits:
 			pushfd   ;backup EFLAGS
 			push 5
 			call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
-;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
+			.deb2:
+			mov [mallocHelper], eax   ;pointer to malloced is in eax
+			add esp, 4
+			popfd
 			popad
+			mov eax, [mallocHelper]
 			mov byte [eax], 0     ;value 0
 			mov dword [eax + 1], 0     ;the next link will be 0 to
 			mov edi, eax                ;make edi point to the new link
 		.endOfLastLink:
 			;eax holds a pointer to the first link of the count
 			mov ecx, [stackPointer]
+			sub ecx, 1
+			;TODO: free the linked list in [operandStack + ecx*4]
 			mov [operandStack + ecx*4], eax   ;insert it to the operand stack, instead of the prev number
-		ret
+			jmp main
 		.checkAndBuildLink:
 			;pre: counter is in edx
 			;     pointer to the curr node is in edi
 			cmp edx, 11111111b     ;value of FF in hex
 			je .buildLink          ;we need to build a new link
-			ret                    ;if we dont need to build a new link, ret
+			ret                   ;if we dont need to build a new link, ret
 			.buildLink:
 				pushad   ;backup regisers
 				pushfd   ;backup EFLAGS
 				push 5
 				call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
-;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
+				mov [mallocHelper], eax   ;pointer to malloced is in eax
+				add esp, 4
+				popfd
 				popad
+				mov eax, [mallocHelper]
 				mov byte [eax], 11111111b     ;FF in hex
 				cmp edi, 0       ;if it's the first link we ever inserted
 				je .firstLink
