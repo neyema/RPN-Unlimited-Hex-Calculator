@@ -181,7 +181,7 @@ endOfInput: ;buffer is valid
 	mov byte [eax], bl
 pushOperand: ;the next of previos node is 0 now (will change)
 	mov dword ebx, [stackPointer]
-	mov dword [operandStack+ebx], eax
+	mov dword [operandStack+ 4*ebx], eax
 	add dword ebx, 1
 	mov [stackPointer], ebx
 createNextNode:
@@ -192,6 +192,7 @@ createNextNode:
 	pushad
 	push 5
 	call malloc
+	deb:
 	mov [currentNode], eax ;in eax the pointer to the memory
 	add esp, 4
 	popad
@@ -200,7 +201,7 @@ createNextNode:
 	mov eax, [currentNode]
 	mov byte [eax], dl  ;moving to the node for the 'A' case, where need to insert '0A'
 	cmp ecx, 0
-	jl pushOperand  ;was one digit, in dl the 4 right bytes are 0, it's cool!
+	jl .connect  ;was one digit, in dl the 4 right bytes are 0, it's cool! we finished reading
 	mov byte bl, dl
 	hexatoBinary
 	sub ecx, 1
@@ -208,9 +209,10 @@ createNextNode:
 	or bl, dl
 	mov byte [eax], bl
 .connect:
-	mov eax, [currentNode]
-	mov dword [previousNode+1], eax  ;connect, previous->next=current
-	jmp createNextNode
+	mov edi, [currentNode]    ;edi holds the pointer to the current node
+	mov esi, [previousNode]   ;esi holds the pointer to the prev node
+	mov [esi + 1], edi        ;set the next of the prev node to the curr node
+	jmp createNextNode        ;go and create more nodes like this beautiful snowflake
 
 quit:   ;free all and quit
   mov ecx, STACK_SIZE
@@ -311,7 +313,7 @@ plus: ;pop two operands and push the sum of them
 		mov [ebx + 1], eax     ;now the next of the link in ebx is the list that eax holds
 		;TODO: FREE UNTILL EAX in it's list (included eax)
 		;handle the carry for curr link
-		;TODO: MAYBE THESE LINE ARE NEEDED?
+		;TODO: MAYBE THESE LINES ARE NEEDED?
 		;mov edx, 0
 		;mov dl, [ebx]           ;move the numeric value of that link to dl
 		;add edx, edi            ;add the carry to the numeric value
@@ -348,28 +350,28 @@ popAndPrint: ;pop one operand and print it's value to STDOUT
 	checkStackUnderflow 1
 	mov eax, [stackPointer]
 	sub eax, 1
-	mov ebx, [operandStack+eax]  ;address to the first node
+	mov ebx, [operandStack+ 4*eax]  ;address to the last inserted node
 	mov ecx, [inputLastIndex]
 fillBuffer:
 	mov byte dl, [ebx] ;in dl, 2 digits, each one 4 bits
 	mov byte al, 0
 	mov al, dl
-	shl al, 4  ;the left most 4 bits
+	shl al, 4       ;the left most 4 bits, Tomer's note: I think we are getting rid of the left most byte here
 	shr al, 4
-	cmp byte al, 9
+	cmp byte al, 9  ;if it's lower than 9, we know that it will be a number char
 	jle .number
-	add byte al, 55
+	add byte al, 55     ;we know that it will be a big letter char
 	jmp .second
 	.number:
-		add byte al, ASCII
+		add byte al, ASCII       ;it's a number, so we make it's value a char of this number
 	.second:
 		mov byte [buffer+ecx], al
 		sub ecx, 1
 		mov byte al, dl
 		shr al, 4
-		cmp byte al, 9
+		cmp byte al, 9        ;if it's lower than 9, we know that it will be a number char
 		jle .secondisnumber
-		add byte al, 55
+		add byte al, 55       ;we know that it will be a big letter char
 		jmp loopcondition
 	.secondisnumber:
 		add byte al, ASCII
