@@ -11,11 +11,13 @@ SYS_EXIT equ 0x01
 
 %macro errorPrompt 1
 	pushad
+	pushfd
 	push dword %1
 	call printf
 	add esp, 4
 	popad
-  jmp quit
+	popfd
+  jmp main
 %endmacro
 
 %macro checkBuffer 1
@@ -39,7 +41,6 @@ SYS_EXIT equ 0x01
 %endmacro
 
 %macro checkStackOverflow 0
-  mov eax, 0
   mov dword eax, [stackPointer]
   cmp eax, STACK_SIZE
   jl %%endcheckStackOverflow
@@ -77,7 +78,7 @@ SYS_EXIT equ 0x01
 		pushfd   ;backup EFLAGS
 		push eax
 		call free
-		pop eax
+		add esp, 4
 		popfd
 		popad
 		mov dword eax, ebx
@@ -349,16 +350,59 @@ plus: ;pop two operands and push the sum of them
 ;idea: using a loop, push to stack eax, which will contain the 2 relevant bytes
 ;than, in a loop, pop each register, and print the 2 first bytes in it
 popAndPrint:  ;pop one operand and print it's value to STDOUT
+	checkStackUnderflow 1
 	mov ebx, [stackPointer]
+	sub ebx, 1
+	mov [stackPointer], ebx
 	mov eax, [operandStack+4*ebx]
-	.push:
-
+	push dword 0  ;mark to the end of the nodes
+push:
+	cmp eax, 0
+	je convert
+	push eax
+	mov dword eax, [eax+1]  ;eax<-next
+	jmp push
+convert:
+	pop eax  ;pop address to node
+	cmp eax, 0
+	je end  ;the mark to stop
+	mov byte dl, [eax] ;in dl, 2 digits, each one 4 bits
+	shr dl, 4   ;4 bits at left
+	cmp byte dl, 9
+	jle .number
+	add byte dl, 55
+	jmp .second
+	.number:
+		add byte dl, ASCII
+	.second:
+		mov byte [charstoprint], dl
+		mov byte dl, [eax] ;now convert the second digit
+		shl dl, 4  ;4 bits at the right
+		shr dl, 4
+		cmp byte dl, 9
+		jle .secondisnumber
+		add byte dl, 55
+		jmp print
+	.secondisnumber:
+		add byte dl, ASCII
+print:
+	mov byte [charstoprint+1], dl
+	mov eax, SYS_WRITE
+	mov ebx, STDOUT
+	mov ecx, charstoprint
+	mov edx, 2
+	int 0x80
+	jmp convert
+end:
+	mov eax, SYS_WRITE
+	mov	ebx, STDOUT		;file descriptor
+	mov ecx, newLine
+	mov	dword edx, 1	;message length
+	int	0x80		;call kernel
 	;pop operand
 	mov dword ebx, [stackPointer]
-	sub ebx, 1  ;we want the last operand on stack
 	mov eax, [operandStack+4*ebx]
 	free ;for free, in eax the address to the first node of the operand
-	mov [stackPointer], ebx
 	jmp main
 
 duplicate:
