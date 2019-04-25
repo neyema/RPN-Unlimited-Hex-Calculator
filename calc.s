@@ -230,15 +230,114 @@ quit:   ;free all and quit
   ret  ;in case sys_exit didn't work
 
 plus: ;pop two operands and push the sum of them
+	;IDEA: sum each link into the before last operand's links (override it), and free
+	;the last operand's links
 	checkStackUnderflow 2
 	;If got here, we got at least 2 operands in the stack
 	mov ecx, [stackPointer]
-	mov eax, [operandStack + 4*ecx]  ;eax holds the last inserted operand
+	mov eax, [operandStack + 4*ecx]  ;eax holds a pointer to the last inserted operand
 	sub ecx, 1
-	mov ebx, [operandStack + 4*ecx]  ;ebx holds the before last inserted operand
-	sub ecx, 1
-	mov [stackPointer], ecx  ;update stackPointer (reduces it by 2)
-	;TODO: continue
+	mov ebx, [operandStack + 4*ecx]  ;ebx holds a pointer to the before last inserted operand
+	mov [stackPointer], ecx  ;update stackPointer (reduces it by 1)
+	mov edi, 0               ;in edi is the artifitial carry
+	.sumLink:
+		cmp dword [eax + 1], 0      ;if the next one is empty
+		je .lastInsertedOperand0
+		cmp dword [ebx + 1], 0      ;if the next one is empty
+		je .beforeLastInertedOperand0
+		;if we got here, both operands have the next link, and curr link was already computed
+		mov ecx, 0
+		mov edx, 0
+		mov eax, [eax + 1]    ;eax will hold a pointer to the next link in this list
+		mov ebx, [ebx + 1]    ;ebx will hold a pointer to the next link in this list
+		mov cl, [eax]         ;moves the numeric value of this link to cl
+		mov dl, [ebx]         ;moves the numeric value of this link to dl
+		add edx, edi          ;add carry from prev sum to value of edx
+		add edx, ecx     		  ;do the sum itself
+		mov edi, edx    	    ;copy numeric value of sum
+		shr edi, 8      	    ;so we can get the artifitial carry, edi now contains 00.....0 or 00.....1
+		mov [ebx], dl    	    ;now the link will have the value of the sum (1 byte without the carry)
+		jmp .sumLink
+
+	.lastInsertedOperand0:
+		;if it gets here, the list in ebx maybe has a next, the list in eax doesn't
+		cmp edi, 0
+		je .stopSum   ;we have no point in continue summing anymore, because carry is 0
+		;TODO: what to do if carry is 1?
+		mov edx, 0
+		mov dl, [ebx]           ;move the numeric value of that link to dl
+		add edx, edi            ;add the carry to the numeric value
+		mov edi, edx
+		shr edi, 8      	    ;so we can get the artifitial carry, edi now contains 00.....0 or 00.....1
+		mov [ebx], dl         ;now the link have the value of the sum of the carry and itself
+		.whileCarry1:
+			cmp edi, 0
+			je .stopSum   ;there's no more carry
+			;handle the carry for curr link
+			cmp dword [ebx + 1], 0   ;if it doesn't have a next
+			je .makeLinkWithCarry    ;make a next link with the carry
+			mov edx, 0
+			mov ebx, [ebx + 1]      ;it sure does have a next
+			mov dl, [ebx]           ;move the numeric value of that link to dl
+			add edx, edi            ;add the carry to the numeric value
+			mov edi, edx
+			shr edi, 8      	    ;so we can get the artifitial carry, edi now contains 00.....0 or 00.....1
+			mov [ebx], dl         ;now the link have the value of the sum of the carry and itself
+			mov ebx, [ebx + 1]    ;ebx now points to the next link
+			jmp .whileCarry1
+
+	.makeLinkWithCarry:
+		;ebx points to the last link of it's list
+		;TODO: CREATE A LINK WITH THE VALUE OF EDI (CARRY) AND CONNECT IT
+
+	.beforeLastInertedOperand0:
+		;if it gets here, lastInsertedOperand is not 0, so we will not stop immidietly
+		;if it gets here, the list in eax has a next.
+		;the list in ebx does not have a next
+		;IDEA: will make the next of the list in ebx the list in eax, and release all the links
+		;before the next of curr link in eax
+		mov edx, 0
+		mov ecx, 0
+		mov cl, [eax]         ;moves the numeric value of this link to cl
+		mov dl, [ebx]         ;moves the numeric value of this link to dl
+		add edx, edi          ;add carry from prev sum to value of edx
+		add edx, ecx     		  ;do the sum itself
+		mov edi, edx    	    ;copy numeric value of sum
+		shr edi, 8      	    ;so we can get the artifitial carry, edi now contains 00.....0 or 00.....1
+		mov [ebx], dl    	    ;now the link will have the value of the sum (1 byte without the carry)
+
+		mov eax, [eax + 1]     ;now eax holds the pointer to it's next link
+		mov [ebx + 1], eax     ;now the next of the link in ebx is the list that eax holds
+		;TODO: FREE UNTILL EAX in it's list (included eax)
+		;handle the carry for curr link
+		;TODO: MAYBE THESE LINE ARE NEEDED?
+		;mov edx, 0
+		;mov dl, [ebx]           ;move the numeric value of that link to dl
+		;add edx, edi            ;add the carry to the numeric value
+		;mov edi, edx
+		;shr edi, 8      	    ;so we can get the artifitial carry, edi now contains 00.....0 or 00.....1
+		;mov [ebx], dl         ;now the link have the value of the sum of the carry and itself
+		mov ebx, [ebx + 1]       ;ebx now holds a pointer to it's next
+		.whileCarry1Again:
+			cmp edi, 0
+			je .stopSum   ;tere's no more carry
+			cmp dword [ebx + 1], 0   ;if it doesn't have a next
+			je .makeLinkWithCarry    ;make a next link with the carry
+			mov edx, 0
+			mov ebx, [ebx + 1]
+			mov dl, [ebx]           ;move the numeric value of that link to dl
+			add edx, edi            ;add the carry to the numeric value
+			mov edi, edx
+			shr edi, 8      	    ;so we can get the artifitial carry, edi now contains 00.....0 or 00.....1
+			mov [ebx], dl         ;now the link have the value of the sum of the carry and itself
+			mov ebx, [ebx + 1]    ;ebx now points to the next link
+			jmp .whileCarry1Again
+	.stopSum:
+		mov ecx, [stackPointer]
+		add ecx, 1
+		mov eax, [operandStack + 4*ecx]  ;eax holds a pointer to the operand that we need to free
+		;TODO: free the memory that eax points to
+		ret
 
 ;ideas: 1. print the buffer, check if need to add 0 or numOf1Bits
 ;2. fill the buffer from the inputLastIndex to the start according to the nodes, call SYS_WRITE with the buffer
@@ -352,6 +451,7 @@ powerMinus:
   ;The result may not be an integer, we should keep only the integer part
 
 numOf1Bits:
+	;TODO: free the prev linked list
   ;pop one operand and push the number of 1 bits in the number
 	;The idea:
 	;WHEN EDX IS BIGGER THAN FF (hex), WE MAKE IT A NODE MAKE EDX 0. IN THE END, WE MAKE
