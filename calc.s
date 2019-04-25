@@ -79,7 +79,7 @@ SYS_EXIT equ 0x01
 		pop eax
 		popfd
 		popad
-		mov eax, [eax+1]
+		mov dword eax, [eax+1]
 		jmp %%freeLoop
 	%%endfree:
 %endmacro
@@ -340,63 +340,20 @@ plus: ;pop two operands and push the sum of them
 		;TODO: free the memory that eax points to
 		ret
 
-;ideas: 1. print the buffer, check if need to add 0 or numOf1Bits
-;2. fill the buffer from the inputLastIndex to the start according to the nodes, call SYS_WRITE with the buffer
-;3.using a loop, push to stack eax, which will contain the 2 relevant bytes
-;than, also in a loop, pop each register, and print the 2 first bytes in it
-popAndPrint: ;pop one operand and print it's value to STDOUT
-	checkStackUnderflow 1
-	mov eax, [stackPointer]
-	sub eax, 1
-	mov ebx, [operandStack+4*eax]  ;address to the first node
-fillBuffer:
-	mov byte dl, [ebx] ;in dl, 2 digits, each one 4 bits
-	mov byte al, 0
-	mov al, dl
-	shl al, 4  ;the left most 4 bits
-	shr al, 4
-	cmp byte al, 9
-	jle .number
-	add byte al, 55
-	jmp .second
-	.number:
-		add byte al, ASCII
-	.second:
-		mov byte [buffer+ecx], al
-		sub ecx, 1
-		mov byte al, dl
-		shr al, 4
-		cmp byte al, 9
-		jle .secondisnumber
-		add byte al, 55
-		jmp loopcondition
-	.secondisnumber:
-		add byte al, ASCII
-loopcondition:
-	mov byte [buffer+ecx], al
-	mov dword ebx, [ebx+1] ;ebx<-next
-	cmp ebx, 0
-	jg fillBuffer
-	;now print
-	mov eax, SYS_WRITE
-	mov ebx, STDOUT
-	mov ecx, buffer
-	mov edx, [inputLastIndex]
-	add edx, 1
-	int 0x80
-	mov eax, SYS_WRITE
-	mov	ebx, STDOUT		;file descriptor
-	mov ecx, newLine
-	mov	edx, 1	;message length
-	int	0x80		;call kernel
+;idea: using a loop, push to stack eax, which will contain the 2 relevant bytes
+;than, in a loop, pop each register, and print the 2 first bytes in it
+popAndPrint:  ;pop one operand and print it's value to STDOUT
+	mov ebx, [stackPointer]
+
+	.push:
+
+
 	;pop operand
-	mov dword eax, [stackPointer]
-	sub eax, 1  ;we want the last operand on stack
-	mov eax, [operandStack+4*eax]
-	free
-	mov eax, [stackPointer]
-	sub eax, 1
-	mov [stackPointer], eax
+	mov dword ebx, [stackPointer]
+	sub ebx, 1  ;we want the last operand on stack
+	mov eax, [operandStack+4*ebx]
+	free ;for free, in eax the address to the first node of the operand
+	mov [stackPointer], ebx
 	jmp main
 
 duplicate:
