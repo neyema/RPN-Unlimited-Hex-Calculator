@@ -72,6 +72,7 @@ SYS_EXIT equ 0x01
 	%%freeLoop:
 		cmp eax, 0
 		je %%endfree
+		mov ebx, [eax+1]   ;save the address of next
 		pushad   ;backup regisers
 		pushfd   ;backup EFLAGS
 		push eax
@@ -79,7 +80,7 @@ SYS_EXIT equ 0x01
 		pop eax
 		popfd
 		popad
-		mov dword eax, [eax+1]
+		mov dword eax, ebx
 		jmp %%freeLoop
 	%%endfree:
 %endmacro
@@ -220,18 +221,20 @@ createNextNode:
 	jmp createNextNode        ;go and create more nodes like this beautiful snowflake
 
 quit: ;free all and quit
-  mov dword ecx, [stackPointer]
-  sub ecx, 1
+  mov dword ecx, 0
+	cmp ecx, [stackPointer]
+	je .exit  ;stackPointer =0 means stack is empty
   .freeLoop:
     mov dword eax, [operandStack + 4*ecx]
     free
-    sub ecx, 1
-		cmp ecx, 0
-		jge .freeLoop
-  mov dword eax, SYS_EXIT
-  mov dword ebx, 0
-  int 0x80
-  ret  ;in case sys_exit didn't work
+    add ecx, 1
+		cmp ecx, [stackPointer]
+		jl .freeLoop
+  .exit:
+		mov dword eax, SYS_EXIT
+	  mov dword ebx, 0
+	  int 0x80
+	  ret  ;in case sys_exit didn't work
 
 plus: ;pop two operands and push the sum of them
 	;IDEA: sum each link into the before last operand's links (override it), and free
@@ -343,67 +346,13 @@ plus: ;pop two operands and push the sum of them
 		;TODO: free the memory that eax points to
 		ret
 
-<<<<<<< HEAD
 ;idea: using a loop, push to stack eax, which will contain the 2 relevant bytes
 ;than, in a loop, pop each register, and print the 2 first bytes in it
 popAndPrint:  ;pop one operand and print it's value to STDOUT
 	mov ebx, [stackPointer]
-
+	mov eax, [operandStack+4*ebx]
 	.push:
 
-
-=======
-;ideas: 1. print the buffer, check if need to add 0 or numOf1Bits
-;2. fill the buffer from the inputLastIndex to the start according to the nodes, call SYS_WRITE with the buffer
-;3.using a loop, push to stack eax, which will contain the 2 relevant bytes
-;than, also in a loop, pop each register, and print the 2 first bytes in it
-popAndPrint: ;pop one operand and print it's value to STDOUT
-	checkStackUnderflow 1
-	mov eax, [stackPointer]
-	sub eax, 1
-	mov ebx, [operandStack + 4*eax]  ;address to the last inserted node
-	mov ecx, [inputLastIndex]
-fillBuffer:
-	mov byte dl, [ebx] ;in dl, 2 digits, each one 4 bits
-	mov byte al, 0
-	mov al, dl
-	shl al, 4       ;the left most 4 bits, Tomer's note: I think we are getting rid of the left most byte here
-	shr al, 4
-	cmp byte al, 9  ;if it's lower than 9, we know that it will be a number char
-	jle .number
-	add byte al, 55     ;we know that it will be a big letter char
-	jmp .second
-	.number:
-		add byte al, ASCII       ;it's a number, so we make it's value a char of this number
-	.second:
-		mov byte [buffer+ecx], al
-		sub ecx, 1
-		mov byte al, dl
-		shr al, 4
-		cmp byte al, 9        ;if it's lower than 9, we know that it will be a number char
-		jle .secondisnumber
-		add byte al, 55       ;we know that it will be a big letter char
-		jmp loopcondition
-	.secondisnumber:
-		add byte al, ASCII
-loopcondition:
-	mov byte [buffer+ecx], al
-	mov dword ebx, [ebx+1] ;ebx<-next
-	cmp ebx, 0
-	jg fillBuffer
-	;now print
-	mov eax, SYS_WRITE
-	mov ebx, STDOUT
-	mov ecx, buffer
-	mov edx, [inputLastIndex]
-	add edx, 1
-	int 0x80
-	mov eax, SYS_WRITE
-	mov	ebx, STDOUT		;file descriptor
-	mov ecx, newLine
-	mov	edx, 1	;message length
-	int	0x80		;call kernel
->>>>>>> 1fb127f774db3afa22c5d53a5d160b5d053e7c84
 	;pop operand
 	mov dword ebx, [stackPointer]
 	sub ebx, 1  ;we want the last operand on stack
