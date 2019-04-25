@@ -186,7 +186,7 @@ endOfInput: ;buffer is valid
 	mov byte [eax], bl
 pushOperand: ;the next of previos node is 0 now (will change)
 	mov dword ebx, [stackPointer]
-	mov dword [operandStack+4*ebx], eax
+	mov dword [operandStack + 4*ebx], eax
 	add dword ebx, 1
 	mov [stackPointer], ebx
 createNextNode:
@@ -197,6 +197,7 @@ createNextNode:
 	pushad
 	push 5
 	call malloc
+	deb:
 	mov [currentNode], eax ;in eax the pointer to the memory
 	add esp, 4
 	popad
@@ -205,16 +206,18 @@ createNextNode:
 	mov eax, [currentNode]
 	mov byte [eax], dl  ;moving to the node for the 'A' case, where need to insert '0A'
 	cmp ecx, 0
-	jl pushOperand  ;was one digit, in dl the 4 right bytes are 0, it's cool!
+	jl .connect  ;was one digit, in dl the 4 right bytes are 0, it's cool! we finished reading
 	mov byte bl, dl
 	hexatoBinary
 	sub ecx, 1
 	shl dl, 4
 	or bl, dl
 	mov byte [eax], bl
-	;mov eax, [currentNode]
-	mov dword [previousNode+1], eax  ;connect, previous->next=current
-	jmp createNextNode
+.connect:
+	mov edi, [currentNode]    ;edi holds the pointer to the current node
+	mov esi, [previousNode]   ;esi holds the pointer to the prev node
+	mov [esi + 1], edi        ;set the next of the prev node to the curr node
+	jmp createNextNode        ;go and create more nodes like this beautiful snowflake
 
 quit: ;free all and quit
   mov dword ecx, [stackPointer]
@@ -311,7 +314,7 @@ plus: ;pop two operands and push the sum of them
 		mov [ebx + 1], eax     ;now the next of the link in ebx is the list that eax holds
 		;TODO: FREE UNTILL EAX in it's list (included eax)
 		;handle the carry for curr link
-		;TODO: MAYBE THESE LINE ARE NEEDED?
+		;TODO: MAYBE THESE LINES ARE NEEDED?
 		;mov edx, 0
 		;mov dl, [ebx]           ;move the numeric value of that link to dl
 		;add edx, edi            ;add the carry to the numeric value
@@ -340,6 +343,7 @@ plus: ;pop two operands and push the sum of them
 		;TODO: free the memory that eax points to
 		ret
 
+<<<<<<< HEAD
 ;idea: using a loop, push to stack eax, which will contain the 2 relevant bytes
 ;than, in a loop, pop each register, and print the 2 first bytes in it
 popAndPrint:  ;pop one operand and print it's value to STDOUT
@@ -348,6 +352,58 @@ popAndPrint:  ;pop one operand and print it's value to STDOUT
 	.push:
 
 
+=======
+;ideas: 1. print the buffer, check if need to add 0 or numOf1Bits
+;2. fill the buffer from the inputLastIndex to the start according to the nodes, call SYS_WRITE with the buffer
+;3.using a loop, push to stack eax, which will contain the 2 relevant bytes
+;than, also in a loop, pop each register, and print the 2 first bytes in it
+popAndPrint: ;pop one operand and print it's value to STDOUT
+	checkStackUnderflow 1
+	mov eax, [stackPointer]
+	sub eax, 1
+	mov ebx, [operandStack + 4*eax]  ;address to the last inserted node
+	mov ecx, [inputLastIndex]
+fillBuffer:
+	mov byte dl, [ebx] ;in dl, 2 digits, each one 4 bits
+	mov byte al, 0
+	mov al, dl
+	shl al, 4       ;the left most 4 bits, Tomer's note: I think we are getting rid of the left most byte here
+	shr al, 4
+	cmp byte al, 9  ;if it's lower than 9, we know that it will be a number char
+	jle .number
+	add byte al, 55     ;we know that it will be a big letter char
+	jmp .second
+	.number:
+		add byte al, ASCII       ;it's a number, so we make it's value a char of this number
+	.second:
+		mov byte [buffer+ecx], al
+		sub ecx, 1
+		mov byte al, dl
+		shr al, 4
+		cmp byte al, 9        ;if it's lower than 9, we know that it will be a number char
+		jle .secondisnumber
+		add byte al, 55       ;we know that it will be a big letter char
+		jmp loopcondition
+	.secondisnumber:
+		add byte al, ASCII
+loopcondition:
+	mov byte [buffer+ecx], al
+	mov dword ebx, [ebx+1] ;ebx<-next
+	cmp ebx, 0
+	jg fillBuffer
+	;now print
+	mov eax, SYS_WRITE
+	mov ebx, STDOUT
+	mov ecx, buffer
+	mov edx, [inputLastIndex]
+	add edx, 1
+	int 0x80
+	mov eax, SYS_WRITE
+	mov	ebx, STDOUT		;file descriptor
+	mov ecx, newLine
+	mov	edx, 1	;message length
+	int	0x80		;call kernel
+>>>>>>> 1fb127f774db3afa22c5d53a5d160b5d053e7c84
 	;pop operand
 	mov dword ebx, [stackPointer]
 	sub ebx, 1  ;we want the last operand on stack
