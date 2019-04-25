@@ -14,8 +14,8 @@ SYS_EXIT equ 0x01
 	push dword %1
 	call printf
 	add esp, 4
+	popad
   jmp quit
-  popad
 %endmacro
 
 %macro checkBuffer 1
@@ -68,15 +68,20 @@ SYS_EXIT equ 0x01
 	%%endhexatoBinary:
 %endmacro
 
-%macro popOperand 0
-	mov dword eax, [stackPointer]
-	sub eax, 1  ;we want the last operand on stack
-	mov eax, [operandStack+eax]
-	push eax ;the parameter is address of the memory
-	call free
-	mov eax, [stackPointer]
-	sub eax, 1
-	mov [stackPointer], eax
+%macro free 0  ;in eax the address to the fisrt node of the operand
+	%%freeLoop:
+		cmp eax, 0
+		je %%endfree
+		pushad   ;backup regisers
+		pushfd   ;backup EFLAGS
+		push eax
+		call free
+		pop eax
+		popfd
+		popad
+		mov eax, [eax+1]
+		jmp %%freeLoop
+	%%endfree:
 %endmacro
 
 section .bss
@@ -181,7 +186,7 @@ endOfInput: ;buffer is valid
 	mov byte [eax], bl
 pushOperand: ;the next of previos node is 0 now (will change)
 	mov dword ebx, [stackPointer]
-	mov dword [operandStack+ebx], eax
+	mov dword [operandStack+4*ebx], eax
 	add dword ebx, 1
 	mov [stackPointer], ebx
 createNextNode:
@@ -211,16 +216,12 @@ createNextNode:
 	mov dword [previousNode+1], eax  ;connect, previous->next=current
 	jmp createNextNode
 
-quit:   ;free all and quit
-  mov ecx, STACK_SIZE
+quit: ;free all and quit
+  mov dword ecx, [stackPointer]
   sub ecx, 1
   .freeLoop:
-    pushad   ;backup regisers
-    pushfd   ;backup EFLAGS
-    push dword [operandStack + 4*ecx]
-    call free
-		popad   ;backup regisers
-		popfd   ;backup EFLAGS
+    mov dword eax, [operandStack + 4*ecx]
+    free
     sub ecx, 1
 		cmp ecx, 0
 		jge .freeLoop
@@ -347,8 +348,7 @@ popAndPrint: ;pop one operand and print it's value to STDOUT
 	checkStackUnderflow 1
 	mov eax, [stackPointer]
 	sub eax, 1
-	mov ebx, [operandStack+eax]  ;address to the first node
-	mov ecx, [inputLastIndex]
+	mov ebx, [operandStack+4*eax]  ;address to the first node
 fillBuffer:
 	mov byte dl, [ebx] ;in dl, 2 digits, each one 4 bits
 	mov byte al, 0
@@ -374,10 +374,9 @@ fillBuffer:
 		add byte al, ASCII
 loopcondition:
 	mov byte [buffer+ecx], al
-	sub ecx, 1
-	mov dword edx, [ebx+1] ;ebx<-next
-	cmp ecx, 0
-	jge fillBuffer
+	mov dword ebx, [ebx+1] ;ebx<-next
+	cmp ebx, 0
+	jg fillBuffer
 	;now print
 	mov eax, SYS_WRITE
 	mov ebx, STDOUT
@@ -390,7 +389,14 @@ loopcondition:
 	mov ecx, newLine
 	mov	edx, 1	;message length
 	int	0x80		;call kernel
-	popOperand
+	;pop operand
+	mov dword eax, [stackPointer]
+	sub eax, 1  ;we want the last operand on stack
+	mov eax, [operandStack+4*eax]
+	free
+	mov eax, [stackPointer]
+	sub eax, 1
+	mov [stackPointer], eax
 	jmp main
 
 duplicate:
@@ -401,6 +407,7 @@ duplicate:
 	pushfd   ;backup EFLAGS
 	push 5
 	call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
 	popad
 	mov edx, [stackPointer]
 	mov ebx, [operandStack + 4*edx]
@@ -419,6 +426,7 @@ duplicate:
 		pushfd   ;backup EFLAGS
 		push 5
 		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
 		popad
 		mov [ecx + 1], eax   ;the next of the prev is this node
 		mov ecx, eax         ;the prev is now this
@@ -493,6 +501,7 @@ numOf1Bits:
 		pushfd   ;backup EFLAGS
 		push 5
 		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
 		popad
 		shl edx, 24             ;the begining of edx will be the number, and the rest will be 0
 		mov [eax], dl     ;value of edx is byte at most, so it's fine using dl
@@ -508,6 +517,7 @@ numOf1Bits:
 			pushfd   ;backup EFLAGS
 			push 5
 			call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
 			popad
 			mov byte [eax], 0     ;value 0
 			mov dword [eax + 1], 0     ;the next link will be 0 to
@@ -528,6 +538,7 @@ numOf1Bits:
 				pushfd   ;backup EFLAGS
 				push 5
 				call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+;TOMER!!! (this was for attention) don't forget to pop '5' and the flags, in the right order
 				popad
 				mov byte [eax], 11111111b     ;FF in hex
 				cmp edi, 0       ;if it's the first link we ever inserted
