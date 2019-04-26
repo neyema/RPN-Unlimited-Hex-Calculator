@@ -534,7 +534,6 @@ power:
 				mov edx, [edi + 1]
 				cmp dword [edx + 1], 0
 				je .checkForNewLink
-				;BUG HERE I THINK:
 				mov edi, [edi + 1]   ;make edi point to the next link
 				jmp .loopEveryLink   ;go to the next link
 	.checkForNewLink:
