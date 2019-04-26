@@ -525,9 +525,12 @@ power:
 		popfd
 		popad
 		mov eax, [mallocHelper]
-		mov dword [eax], 0         ;numeric value of the new link is 0
+		mov byte [eax], 0         ;numeric value of the new link is 0
 		mov dword [eax + 1], ebx   ;next of this link is the first link in ebx's list
 		mov ebx, eax               ;the new first link in ebx's list is the new link we create (eax points to it)
+		mov eax, [stackPointer]
+		sub eax, 1    ;make stackPointer to be the index of the last inserted operand
+		mov [operandStack + 4*eax], ebx   ;change the head
 		sub ecx, 8
 		jmp .shftLoop
 		.ySmallerEq8:
@@ -543,7 +546,8 @@ power:
 			mov [edi], dl     ;change the value of this link
 			mov esi, edx
 			shr esi, 8        ;take the carry with me!
-			cmp dword [edi + 1], 0
+			mov edx, edi
+			cmp dword [edx + 1], 0
 			je .checkForNewLink
 			.loopEveryLink:
 				;when we get here, edi points to a link that has been shifted
@@ -565,7 +569,7 @@ power:
 				mov edi, [edi + 1]   ;make edi point to the next link
 				jmp .loopEveryLink   ;go to the next link
 	.checkForNewLink:
-		;edi points to a link with no next
+		;edx points to a link with no next
 		;esi holds the carry after we handled edi's shift
 		cmp esi, 0
 		je .endCheckForNewLink   ;we do no need to action
@@ -583,7 +587,7 @@ power:
 		mov eax, [mallocHelper]
 		mov byte [eax], 1   ;it's numeric value will be 1
 		mov dword [eax + 1], 0   ;it's next will be 0
-		mov [edi + 1], eax        ;the next of edi's link will be eax's link
+		mov [edx + 1], eax        ;the next of edx's link will be eax's link
 		.endCheckForNewLink:
 		sub ecx, 1                ;sub the number of shifts that left
 		cmp ecx, 0                ;if we got no more shifts to do
