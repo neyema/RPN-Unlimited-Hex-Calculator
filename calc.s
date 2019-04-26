@@ -40,6 +40,30 @@ SYS_EXIT equ 0x01
   %%endcheckBuffer:
 %endmacro
 
+%macro cleanbuffer 0  ;cleans the buffer from leading '0' at the left
+	mov eax, 0
+	%%find:
+		cmp eax, [inputLastIndex]
+		je %%indent
+		cmp eax, '0'
+		jne %%indent  ;found the first char that is not zero
+		add eax, 1
+		jmp %%find
+	%%indent:
+		sub [inputLastIndex], eax  ;the last index without leading '0'
+		mov ecx, 0  ;to change all chars in buffer
+	%%indentloop:
+		cmp ecx, [inputLastIndex]
+		je %%endcleanbuffer
+		add ecx, eax
+		mov ebx, [buffer+ecx]  ;ebx<- buffer+ecx+eax (the char to change with)
+		sub ecx, eax
+		mov [buffer+ecx], ebx  ;changed
+		add ecx, 1
+		jmp %%indentloop
+		%%endcleanbuffer:
+%endmacro
+
 %macro checkStackOverflow 0
   mov dword eax, [stackPointer]
   cmp eax, STACK_SIZE
@@ -168,7 +192,9 @@ endOfInput: ;buffer is valid
   ;in that way, the digits at the start will be in the last node
 	sub ecx, 1
 	mov [inputLastIndex], ecx
+	cleanbuffer
 	;now create first node
+createFirstNode:
 	pushad
 	push 5
 	call malloc
@@ -176,6 +202,7 @@ endOfInput: ;buffer is valid
 	add esp, 4
 	popad
 	hexatoBinary ;now in dl the byte
+	mov ecx, [inputLastIndex]
 	sub ecx, 1
 	mov eax, [currentNode]
 	mov byte [eax], dl
