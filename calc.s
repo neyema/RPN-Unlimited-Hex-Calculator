@@ -45,20 +45,21 @@ SYS_EXIT equ 0x01
 	%%find:
 		cmp eax, [inputLastIndex]
 		je %%indent
-		cmp eax, '0'
+		cmp byte [buffer+eax], '0'
 		jne %%indent  ;found the first char that is not zero
 		add eax, 1
 		jmp %%find
 	%%indent:
-		sub [inputLastIndex], eax  ;the last index without leading '0'
+		mov dword edx, [inputLastIndex]
+		sub dword edx, eax
+		mov [inputLastIndex], edx
+	  ;the last index without leading '0'
 		mov ecx, 0  ;to change all chars in buffer
 	%%indentloop:
 		cmp ecx, [inputLastIndex]
-		je %%endcleanbuffer
-		add ecx, eax
-		mov ebx, [buffer+ecx]  ;ebx<- buffer+ecx+eax (the char to change with)
-		sub ecx, eax
-		mov [buffer+ecx], ebx  ;changed
+		jg %%endcleanbuffer
+		mov byte bl, [buffer+ecx+eax]  ;ebx<- buffer+ecx+eax (the char to change with)
+		mov byte [buffer+ecx], bl  ;changed
 		add ecx, 1
 		jmp %%indentloop
 		%%endcleanbuffer:
@@ -193,6 +194,7 @@ endOfInput: ;buffer is valid
 	sub ecx, 1
 	mov [inputLastIndex], ecx
 	cleanbuffer
+	mov ecx, [inputLastIndex]
 	;now create first node
 createFirstNode:
 	pushad
@@ -201,13 +203,12 @@ createFirstNode:
 	mov [currentNode], eax ;in eax the pointer to the memory
 	add esp, 4
 	popad
-	hexatoBinary ;now in dl the byte
-	mov ecx, [inputLastIndex]
-	sub ecx, 1
+	hexatoBinary ;in ecx, the index we want to convert, and after this, in dl the converted byte
+	sub ecx, 1 ;one char converted
 	mov eax, [currentNode]
 	mov byte [eax], dl
 	cmp ecx, 0
-	jl pushOperand  ;was one digit, in dl the 4 right bytes are 0, it's cool!
+	jl pushOperand  ;was one digit, in dl the 4 right bits are 0, it's cool!
 	mov byte bl, dl
 	hexatoBinary
 	sub ecx, 1
