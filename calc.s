@@ -493,12 +493,12 @@ power:
   ;X is the top operand, Y is the second operand. Compute X*(2^Y)
   ;if Y>200, it's an error and we should print error and leave the stack as is
 	checkStackUnderflow 2
-
+	deb:
 	mov eax, [stackPointer]
 	sub eax, 1    ;make stackPointer to be the index of the last inserted operand
 	mov ebx, [operandStack + 4*eax]   ;ebx has the pointer to X
 	sub eax, 1
-	mov ecx, [operandStack + 4*ecx]   ;ecx has the pointer to Y
+	mov ecx, [operandStack + 4*eax]   ;ecx has the pointer to Y
 	cmp dword [ecx + 1], 0            ;if Y is bigger than 0xFF (0xFF > 200)
 	jne .error
 	mov ecx, [ecx]        ;now ecx holds the Y number
@@ -506,6 +506,9 @@ power:
 	jg .error          ;if it's bigger than 200, we got an error! funnnnnn
 	;to recap: if we got here, ecx holds legal Y. ebx holds pointer to first link of X.
 	.shftLoop:
+		mov eax, [stackPointer]
+		sub eax, 1    ;make stackPointer to be the index of the last inserted operand
+		mov ebx, [operandStack + 4*eax]   ;ebx has the pointer to X
 		cmp ecx, 8
 		jle .ySmallerEq8
 		;Y>8 here
@@ -515,6 +518,7 @@ power:
 		pushfd   ;backup EFLAGS
 		push 5
 		call malloc  ;after this, eax holds the pointer to the block of memory, representing one node
+		.deb2:
 		mov [mallocHelper], eax   ;pointer to malloced memory is in eax
 		add esp, 4
 		popfd
@@ -526,7 +530,6 @@ power:
 		sub ecx, 8
 		jmp .shftLoop
 		.ySmallerEq8:
-			;TODO: WRITE IT
 			;Y<= 8 here
 			;IDEA: shift left 1 every link, and pass carry to the next link
 			mov edi, ebx   ;edi holds a pointer to X first link
@@ -537,7 +540,10 @@ power:
 			;now edx have only the numeric value of this link
 			shl edx, 1        ;shift it to do the power!
 			mov [edi], dl     ;change the value of this link
-			mov esi, dh       ;take the carry with me!
+			mov esi, edx
+			shr esi, 8        ;take the carry with me!
+			cmp dword [edi + 1], 0
+			je .checkForNewLink
 			.loopEveryLink:
 				;when we get here, edi points to a link that has been shifted
 				;it's next hasn't been shifted yet
@@ -550,9 +556,12 @@ power:
 				add edx, esi      ;add the carry
 				mov eax, [edi + 1]
 				mov [eax], dl     ;change the value of this link
-				mov esi, dh       ;take the carry with me!
-				cmp dword [edi + 1], 0
+				mov esi, edx
+				shr esi, 8        ;take the carry with me!
+				mov edx, [edi + 1]
+				cmp dword [edx + 1], 0
 				je .checkForNewLink
+				;BUG HERE I THINK:
 				mov edi, [edi + 1]   ;make edi point to the next link
 				jmp .loopEveryLink   ;go to the next link
 	.checkForNewLink:
@@ -570,6 +579,7 @@ power:
 		add esp, 4
 		popfd
 		popad
+		.deb3:
 		mov eax, [mallocHelper]
 		mov byte [eax], 1   ;it's numeric value will be 1
 		mov dword [eax + 1], 0   ;it's next will be 0
@@ -583,12 +593,12 @@ power:
 		;TODO: FREE Y
 		;reduce stackPointer by 1 after we free Y
 		mov eax, [stackPointer]
-		sub eax
+		sub eax, 1
 		mov [stackPointer], eax
 		;now we will move the updated X's list (after the computation) to a new place
 		;in the stack. It will replace Y in it's place
 		mov ebx, [operandStack + 4*eax]   ;ebx points to X after the computation
-		sub eax   ;now eax is the right offset for Y's place
+		sub eax, 1   ;now eax is the right offset for Y's place
 		mov [operandStack + 4*eax], ebx    ;puck! no more Y. ONLY X.
 		jmp main
 	.error:
