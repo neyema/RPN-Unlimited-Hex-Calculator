@@ -4,6 +4,7 @@ ASCII equ 48
 
 STDIN equ 0
 STDOUT equ 1
+STDERR equ 2
 
 SYS_READ equ 0x03
 SYS_WRITE equ 0x04
@@ -17,7 +18,7 @@ SYS_EXIT equ 0x01
 	add esp, 4
 	popad
 	popfd
-  jmp main
+  jmp myCalc
 %endmacro
 
 %macro checkBuffer 1
@@ -139,6 +140,34 @@ SYS_EXIT equ 0x01
 	%%endremoveleading0:
 %endmacro
 
+%macro debugInput 0
+	cmp byte [debugFlag], 0
+	je %%enddebugFlag
+	mov eax, SYS_WRITE
+	mov	ebx, STDERR		;file descriptor
+	mov ecx, inputDebug
+	mov	edx, 10	;message length
+	int	0x80		;call kernel
+	mov edx, eax ;in eax the return value of sys_read, number of bytes
+	mov eax, SYS_WRITE
+	mov	ebx, STDERR		;file descriptor
+	mov ecx, buffer
+	int	0x80		;call kernel
+	%%enddebugFlag:
+%endmacro
+
+%macro debugResult 0 ;result is the last operand on stack
+	cmp byte [debugFlag], 0
+	je %%enddebugFlag
+	mov eax, SYS_WRITE
+	mov	ebx, STDERR		;file descriptor
+	mov ecx, resultDebug
+	mov	edx, 11	;message length
+	int	0x80		;call kernel
+	;TODO: print the top operand in stack
+	%%enddebugFlag:
+%endmacro
+
 section .bss
   operandStack: resb (STACK_SIZE+1)*4  ;each element is pointer (4 bytes) to node
 	;it's +1 because in numbOf1Bits we will want to use plus method
@@ -153,6 +182,8 @@ section .rodata
   stackUnderflow: db "Error: Insufficient Number of Arguments on Stack",10,0
 	yBigger200Msg: db "Error: Y>200", 10, 0   ;TODO: CHANGE IT TO AS THEY WANT
 	newLine: db "",10,0
+	inputDebug: db "input is: ",0
+	resultDebug: db "result is: ",0
 
 section .data
   stackPointer: dd 0  ;index of the next empty slot in operand stack
@@ -164,10 +195,14 @@ section .data
 	replacedList: dd 0       ;helper for numOf1Bits, will save the pointer to the list that we are replacing in the stack
 	freeUntillNotIncluded: dd 0   ;helper for plus, we will free untill this pointer (not included)
 	Y: dd 0 ;pointer to Y of v operation (X*2^(-Y))
+	debugFlag: db 0 ;1 iff debug mode is on
+	opCounter: dd 0  ;counts all operations, return value of myCalc
+	formatint: db "%d\n"
 
 section .text
 align 16
  global main
+ global myCalc
  extern printf  ;use when there is '\n' at the end
  extern fflush
  extern malloc
@@ -177,6 +212,35 @@ align 16
  ;extern fgets ;im using system call SYS_READ
 
 main:
+	push ebp
+	mov ebp, esp
+	pushad
+
+	mov eax, [ebp+8] ;argc
+	cmp eax, 2
+	jl startcalc ;there is only one argument, so debug flag is off
+	mov esi, [ebp + 12] ;argv
+	mov eax, [esi + 4] ;2nd argument
+	cmp word [eax], "-d" ;word is 16 bits, 2 chars
+	jne startcalc
+	mov byte [debugFlag], 1
+	startcalc:
+		mov byte [opCounter], 0
+		mov dword [opCounter], 0
+		call myCalc
+	;TODO: print myCalc return value
+	;push eax
+	;push formatint
+	;call printf
+	;add esp, 1  ;format is db
+	;pop eax
+
+	popad
+	mov esp, ebp
+	pop ebp
+	ret
+
+myCalc:
 	mov eax, 0
 	mov ebx, 0
 	mov ecx, 0
@@ -191,6 +255,7 @@ main:
   mov dword ecx, buffer
   mov dword edx, INPUT_SIZE
   int 0x80
+	add dword [opCounter], 1 ;operation
   cmp byte [buffer], 'q'
   je quit
   cmp byte [buffer], '+'
@@ -208,6 +273,7 @@ main:
   cmp word [buffer], 'sr'
   je squareRoot
   ;it's none of the above, so it's operand
+	debugInput
 	checkStackOverflow
   mov ecx, 0  ;stores input length
 checkBufferLoop:
@@ -256,7 +322,7 @@ pushOperand: ;the next of previos node is 0 now (will change)
 	mov dword [eax+1], 0  ;it is 0 just for now (in case there are no more nodes)
 createNextNode:
 	cmp ecx, 0
-	jl main
+	jl myCalc
 	mov eax, [currentNode]
 	mov [previousNode], eax  ;prev = curr
 	pushad
@@ -294,15 +360,14 @@ quit: ;free all and quit
 		cmp ecx, [stackPointer]
 		jl .freeLoop
   .exit:
-		mov dword eax, SYS_EXIT
-	  mov dword ebx, 0
-	  int 0x80
-	  ret  ;in case sys_exit didn't work
+		mov dword eax, [opCounter] ;return value
+	  ret ;ret to main
 
 plusAtmosphere:
 	;So main can use plus without call it. Main will jump here
 	call plus
-	jmp main
+	debugResult ;the last operand in stack
+	jmp myCalc
 
 plus: ;pop two operands and push the sum of them
 	;IDEA: sum each link into the before last operand's links (override it), and free
@@ -485,7 +550,7 @@ end:
 	mov dword ebx, [stackPointer]
 	mov eax, [operandStack+4*ebx]
 	free ;for free, in eax the address to the first node of the operand
-	jmp main
+	jmp myCalc
 
 duplicate:
   ;push to the stack a copy of the top operand in the stack
@@ -513,7 +578,7 @@ duplicate:
 	mov [operandStack + 4*edx], eax    ;insert it to the operand stack
 	jne .nextNode    ;if it has a next node, let's handle it!
 	add dword [stackPointer], 1
-	jmp main              ;else, get the hell out of this method
+	jmp myCalc              ;else, get the hell out of this method
 	.nextNode:
 		mov ebx, [ebx + 1]   ;ebx is the pointer to the next node
 		pushad   ;backup regisers
@@ -534,7 +599,8 @@ duplicate:
 		cmp [ebx + 1], esi
 		jne .nextNode
 	add dword [stackPointer], 1      ;update the number of operands
-	jmp main                                   ;GO HOME YOU PUNK! (now an amazing guitar solo by Dimebag is played)
+	debugResult
+	jmp myCalc        ;GO HOME YOU PUNK! (now an amazing guitar solo by Dimebag is played)
 
 power:
   ;X is the top operand, Y is the second operand. Compute X*(2^Y)
@@ -651,14 +717,11 @@ power:
 		mov ebx, [operandStack + 4*eax]   ;ebx points to X after the computation
 		sub eax, 1   ;now eax is the right offset for Y's place
 		mov [operandStack + 4*eax], ebx    ;puck! no more Y. ONLY X.
-		jmp main
+		debugResult
+		jmp myCalc
 	.error:
-		mov eax, SYS_WRITE
-	  mov	ebx, STDOUT		;file descriptor
-	  mov ecx, yBigger200Msg
-	  mov	edx, 14	;message length
-	  int	0x80		;let OS take over. MASTER! FASTER!
-		jmp main
+		errorPrompt wrongYvalue
+		jmp myCalc
 
 powerMinus:
   ;X is the top operand, Y is the second operand. Compute X*(2^(-Y))
@@ -723,8 +786,10 @@ powerMinus:
 		free
 		add ecx, 1 ;now ecx is the old index of X in the stack
 		mov [stackPointer], ecx ;ecx = old stackPointer -1, pop Y and move X one slot down in the stack
-		jmp main
+		debugResult
+		jmp myCalc
 
+;TODO: add a debugResultsomewhere here after pushing the operand to stack
 numOf1Bits:
   ;pop one operand and push the number of 1 bits in the number
 	;The idea:
@@ -834,7 +899,7 @@ numOf1Bits:
 			mov esi, [initStackPointer]
 			mov [stackPointer], esi
 			;mov [operandStack + ecx*4], eax   ;insert it to the operand stack, instead of the prev number
-			jmp main
+			jmp myCalc
 		.checkAndBuildLink:
 			;pre: counter is in edx
 			;     pointer to firstCounterNode is in [operandStack + 4*(stackPointer-1)] edi
@@ -879,6 +944,7 @@ numOf1Bits:
 					mov [operandStack + 4*esi], edi     ;update it in the operand stack
 				.endOfBuildLink:
 				mov edx, 0
+				;debugResult
 				ret
 
 				numOf1BitsOld:
@@ -965,7 +1031,7 @@ numOf1Bits:
 							sub ecx, 1
 							;TODO: free the linked list in [operandStack + ecx*4]
 							mov [operandStack + ecx*4], eax   ;insert it to the operand stack, instead of the prev number
-							jmp main
+							jmp myCalc
 						.checkAndBuildLink:
 							;pre: counter is in edx
 							;     pointer to the curr node is in edi
