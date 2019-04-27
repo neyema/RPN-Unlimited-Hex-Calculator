@@ -133,7 +133,7 @@ section .data
 	mallocHelper: dd 0       ;helper to all malloc functions, will hold pointers
 	initStackPointer: dd 0   ;helper for numOf1Bits, will save the stackPointer when we just started this method
 	replacedList: dd 0       ;helper for numOf1Bits, will save the pointer to the list that we are replacing in the stack
-
+	freeUntillNotIncluded: dd 0   ;helper for plus, we will free untill this pointer (not included)
 section .text
 align 16
  global main
@@ -279,13 +279,14 @@ plus: ;pop two operands and push the sum of them
 	;the last operand's links
 	checkStackUnderflow 2
 	;If got here, we got at least 2 operands in the stack
+	mov dword [freeUntillNotIncluded], 0   ;make it 0 so we can reuse
 	mov ecx, [stackPointer]
 	sub ecx, 1
 	mov eax, [operandStack + 4*ecx]  ;eax holds a pointer to the last inserted operand
 	sub ecx, 1
 	mov ebx, [operandStack + 4*ecx]  ;ebx holds a pointer to the before last inserted operand
-	add ecx, 1
-	mov [stackPointer], ecx  ;update stackPointer (reduces it by 1)
+	;add ecx, 1
+	;mov [stackPointer], ecx  ;update stackPointer (reduces it by 1)
 	mov edi, 0               ;in edi is the artifitial carry
 	mov cl, [eax]         ;moves the numeric value of this link to cl
 	mov dl, [ebx]         ;moves the numeric value of this link to dl
@@ -320,7 +321,6 @@ plus: ;pop two operands and push the sum of them
 			cmp edi, 0
 			je .stopSum   ;there's no more carry
 			;handle the carry for curr link
-			;when FFFFFF+FFF, it comes here with ebx=0. why? whyyyyyyyyy???????
 			cmp dword [ebx + 1], 0   ;if it doesn't have a next
 			je .makeLinkWithCarry    ;make a next link with the carry
 			mov edx, 0
@@ -358,6 +358,7 @@ plus: ;pop two operands and push the sum of them
 		;the list in ebx does not have a next
 		;IDEA: will make the next of the list in ebx the list in eax, and release all the links
 		;before the next of curr link in eax
+		mov [freeUntillNotIncluded], eax  ;we need to free eax's link untill that link
 		mov eax, [eax + 1]      ;get eax's next
 		mov [ebx + 1], eax     ;now the next of the link in ebx is the list that eax holds
 		.whileCarry1Again:
@@ -375,6 +376,27 @@ plus: ;pop two operands and push the sum of them
 			jmp .whileCarry1Again
 	.stopSum:
 		;TODO: free the memory that eax points to
+		mov ebx, [stackPointer]
+		sub ebx, 1
+		jmp endOfEnd
+		mov eax, [operandStack + 4*ebx]  ;eax points to the first link of the list that we want to free
+		;if we got here, we need to free untill we hit this link
+		freeLoopPlus:
+			cmp eax, [freeUntillNotIncluded]  ;will work if freeUntill... is 0 (untouched) as well
+			je endOfEnd
+			mov ebx, [eax+1]   ;save the address of next
+			pushad   ;backup regisers
+			pushfd   ;backup EFLAGS
+			push eax
+			call free
+			afterFree:
+			add esp, 4
+			popfd
+			popad
+			mov dword eax, ebx
+			jmp freeLoopPlus
+	endOfEnd:
+		sub dword [stackPointer], 1
 		ret
 
 ;idea: using a loop, push to stack eax, which will contain the 2 relevant bytes
@@ -586,6 +608,10 @@ power:
 		jmp .shftLoop
 	.freeAndGoToMain:
 		;TODO: FREE Y
+		mov ebx, [stackPointer]
+		sub ebx, 2   ;Y is the before last
+		mov eax, [operandStack + 4*ebx]  ;eax is the pointer to Y's first link
+		free    ;free Y using free macro
 		;reduce stackPointer by 1 after we free Y
 		mov eax, [stackPointer]
 		sub eax, 1
@@ -610,11 +636,6 @@ powerMinus:
   ;The result may not be an integer, we should keep only the integer part
 
 numOf1Bits:
-	;TODO: free the prev linked list
-	;TODO: when edx is bigger than FF, we need to plus FF with
-	;the list in eax
-	;TODO: in the end, we need to plus the remainder with
-	;the list in eax
   ;pop one operand and push the number of 1 bits in the number
 	;The idea:
 	;WHEN EDX IS BIGGER THAN FF (hex), WE MAKE IT A NODE MAKE EDX 0. IN THE END, WE MAKE
@@ -622,14 +643,18 @@ numOf1Bits:
 	checkStackUnderflow 1
 	;If got here, we got at least 1 operand in the stack
 	mov eax, 0
+	mov ebx, 0
+	mov ecx, 0
+	mov edx, 0
+	mov edi, 0
+	mov esi, 0
+	mov dword [replacedList], 0
+	mov dword [initStackPointer], 0
 	mov ecx, [stackPointer]
 	mov [initStackPointer], ecx
 	sub ecx, 1
 	mov eax, [operandStack + 4*ecx]  ;eax holds the pointer to the first node of the last inserted operand
 	mov [replacedList], eax          ;save the head of the replaced list
-	;sub ecx, 1
-	;mov [stackPointer], ecx  ;update stackPointer (reduces it by 1)
-	;mov ebx, [eax]     ;removed in debug ebx is the value of the first 4 bytes of the node itself
 	mov edi, 0         ;edi is the pointer to the first node of the counter
 	mov edx, 0         ;edx will be our counter of 1s
 	.loopUntill0:
@@ -666,7 +691,6 @@ numOf1Bits:
 		popfd
 		popad
 		mov eax, [mallocHelper]
-		;shl edx, 24             ;the begining of edx will be the number, and the rest will be 0
 		mov [eax], dl     ;value of edx is byte at most, so it's fine using dl
 		mov dword [eax + 1], 0   ;it has no next
 		cmp edi, 0
@@ -689,9 +713,6 @@ numOf1Bits:
 		mov esi, [initStackPointer]
 		sub esi, 1
 		mov [operandStack + 4*esi], eax     ;update it in the operand stack
-		;REMOVED IN DEBUG:
-		;mov [eax + 1], edi      ;the change the next link of this link
-		;mov edi, eax            ;change the curr link to this link
 		.checkNeed0:
 			;We will create a node if it will be the only node, and it value will be 0
 			cmp edi, 0
@@ -718,7 +739,8 @@ numOf1Bits:
 			;eax holds a pointer to the first link of the count
 			;mov ecx, [stackPointer]
 			;sub ecx, 1
-			;TODO: free the linked list in [replacedList]
+			mov eax, [replacedList]
+			free       ;free the list in eax using macro
 			mov esi, [initStackPointer]
 			mov [stackPointer], esi
 			;mov [operandStack + ecx*4], eax   ;insert it to the operand stack, instead of the prev number
