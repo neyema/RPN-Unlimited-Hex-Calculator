@@ -111,6 +111,34 @@ SYS_EXIT equ 0x01
 	%%endfree:
 %endmacro
 
+;this one only to use aftre v operation
+;removes the leading zeros from the new X, which is on top of stack
+;update ths operand stack, so x is pointing to the leading zero
+%macro removeleading0 0
+	mov ecx, [stackPointer]
+	sub ecx, 1
+	mov eax, [operandStack+4*ecx]
+	mov ebx, eax ;ebx is prev
+	%%endofoperand:
+		cmp dword [eax+1], 0  ;the last node of this operand
+		je %%check
+		mov eax, [eax+1]
+		cmp ebx, [operandStack+4*ecx]  ;ebx is to the first node, should not change
+		je %%endofoperand
+		mov ebx, [ebx+1]  ;inc the prev also
+		jmp %%endofoperand
+	%%check:
+		cmp byte [eax], 0
+		jne %%endremoveleading0
+		mov dword edx, [eax+1]
+		mov dword [ebx+1], edx ;prev.next = curr.next
+		free ;freeing the node eax, bc it's zero node, and we remove it from the operand
+		mov eax, [operandStack+4*ecx]
+		mov ebx, eax ;ebx is prev
+		jmp %%endofoperand
+	%%endremoveleading0:
+%endmacro
+
 section .bss
   operandStack: resb STACK_SIZE*4  ;each element is pointer (4 bytes) to node
   buffer: resb INPUT_SIZE
@@ -130,6 +158,7 @@ section .data
   currentNode: dd 0  ;pointer to the node, holds the address to where the node start
 	inputLastIndex: dd 0  ;index in buffer to the last relevant char of the input
 	mallocHelper: dd 0  ;helper to all malloc functions, will hold pointers
+	Y: dd 0 ;pointer to Y of v operation (X*2^(-Y))
 
 section .text
 align 16
@@ -219,6 +248,7 @@ pushOperand: ;the next of previos node is 0 now (will change)
 	mov dword [operandStack + 4*ebx], eax
 	add dword ebx, 1
 	mov [stackPointer], ebx
+	mov dword [eax+1], 0  ;it is 0 just for now (in case there are no more nodes)
 createNextNode:
 	cmp ecx, 0
 	jl main
@@ -270,11 +300,7 @@ plus: ;pop two operands and push the sum of them
 	checkStackUnderflow 2
 	;If got here, we got at least 2 operands in the stack
 	mov ecx, [stackPointer]
-<<<<<<< HEAD
-	;sub ecx, 1
-=======
 	sub ecx, 1
->>>>>>> e7873bf4066899bb66612ff394c194ead04b929e
 	mov eax, [operandStack + 4*ecx]  ;eax holds a pointer to the last inserted operand
 	sub ecx, 1
 	mov ebx, [operandStack + 4*ecx]  ;ebx holds a pointer to the before last inserted operand
@@ -598,6 +624,67 @@ power:
 powerMinus:
   ;X is the top operand, Y is the second operand. Compute X*(2^(-Y))
   ;The result may not be an integer, we should keep only the integer part
+	;the relevant case is Y<=200, so Y is one node
+	checkStackUnderflow 2
+	mov ecx, [stackPointer]
+	sub ecx, 2 ;X is the top of the stack, we want Y
+	mov ebx, [operandStack+4*ecx]  ;in ebx the address to the first node of Y
+	;check Y>200
+	cmp dword [ebx+1], 0
+	jne .error ;there is next, so Y>255>200 (1 byte is maximum 255)
+	mov edx, 0
+	mov dl, [ebx]
+	cmp edx, 200  ;equal, so there is one node
+	jg .error ;Y>200
+	mov [Y], ebx ;Y holds pointer to the first node
+	mov byte dl, [ebx]  ;in dl the value of Y
+	;idea: push to stack all nodes of X, than pop each one, shr, set carry and continue
+	;eax<-X
+	jmp .Yloop
+	.error:
+		errorPrompt wrongYvalue
+	.Yloop:  ;Y iterations, using dl as counter, dh as carry
+		cmp byte dl, 0
+		je .end
+		push dword 0
+		mov ecx, [stackPointer]
+		sub ecx, 1
+		mov dword eax, [operandStack+4*ecx] ;the first node of the X, to start shifting
+		mov byte dh, 0  ;the curry is 0, every shift
+		.pushloop:
+			cmp eax, 0
+			je .divideby2
+			push eax
+			mov dword eax, [eax+1] ;maybe not needed dword
+			jmp .pushloop
+		;all nodes are in stack, left to right order (of the actual number)
+	.divideby2:
+		pop eax
+		cmp dword eax, 0
+		je .Yloopcondition
+		shr byte [eax], 1
+		jc .setcarry
+		or byte [eax], dh  ;so the carry will be in the most left bit
+		mov byte dh, 0
+		jmp .divideby2
+	.setcarry:
+		or byte [eax], dh
+		mov byte dh, 128  ;so dh is 10000000, it's ok bc carry is at the left when shifting right
+		jmp .divideby2
+	.Yloopcondition:
+	  sub byte dl, 1  ;sub edx, 1
+		jmp .Yloop
+	.end:
+		removeleading0
+		mov ecx, [stackPointer]
+		sub ecx, 2
+		mov ebx, [operandStack+4*ecx+4] ;in ebx the pointer to X
+		mov [operandStack+4*ecx], ebx ;replaced Y with X  in the stack (X will hold the result)
+		mov dword eax, [Y]
+		free
+		add ecx, 1 ;now ecx is the old index of X in the stack
+		mov [stackPointer], ecx ;ecx = old stackPointer -1, pop Y and move X one slot down in the stack
+		jmp main
 
 numOf1Bits:
 	;TODO: free the prev linked list
