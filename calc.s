@@ -114,21 +114,22 @@ SYS_EXIT equ 0x01
 section .bss
   operandStack: resb STACK_SIZE*4  ;each element is pointer (4 bytes) to node
   buffer: resb INPUT_SIZE
-	charstoprint: resb 2 ;place to store 2 bytes before printing
+	charstoprint: resb 2 ;to store 2 bytes before printing
 
 section .rodata
   calcPrompt: db "calc: ",0
   invalidInput: db "Error: Invalid Input!",10,0
+	wrongYvalue: db "Error: wrong Y value",10,0  ;print when Y>200
   stackOverflow: db "Error: Operand Stack Overflow",10,0
   stackUnderflow: db "Error: Insufficient Number of Arguments on Stack",10,0
 	newLine: db "",10,0
 
 section .data
-  stackPointer: dd 0  ;the index of the next empty slot in operand stack
+  stackPointer: dd 0  ;index of the next empty slot in operand stack
   previousNode: dd 0  ;contains address of the node
   currentNode: dd 0  ;pointer to the node, holds the address to where the node start
-	inputLastIndex: dd 0
-	mallocHelper: dd 0       ;helper to all malloc functions, will hold pointers
+	inputLastIndex: dd 0  ;index in buffer to the last relevant char of the input
+	mallocHelper: dd 0  ;helper to all malloc functions, will hold pointers
 
 section .text
 align 16
@@ -151,13 +152,11 @@ main:
   mov ecx, calcPrompt
   mov	edx, 7	;message length
   int	0x80		;call kernel
-
   mov dword eax, SYS_READ
   mov dword ebx, STDIN
   mov dword ecx, buffer
   mov dword edx, INPUT_SIZE
   int 0x80
-
   cmp byte [buffer], 'q'
   je quit
   cmp byte [buffer], '+'
@@ -271,6 +270,7 @@ plus: ;pop two operands and push the sum of them
 	checkStackUnderflow 2
 	;If got here, we got at least 2 operands in the stack
 	mov ecx, [stackPointer]
+	;sub ecx, 1
 	mov eax, [operandStack + 4*ecx]  ;eax holds a pointer to the last inserted operand
 	sub ecx, 1
 	mov ebx, [operandStack + 4*ecx]  ;ebx holds a pointer to the before last inserted operand
@@ -605,7 +605,6 @@ power:
 	.error:
 		;TODO: WRITE ERROR
 		jmp main
-
 
 powerMinus:
   ;X is the top operand, Y is the second operand. Compute X*(2^(-Y))
