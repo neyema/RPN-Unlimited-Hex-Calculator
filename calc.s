@@ -329,6 +329,7 @@ myCalc:
   cmp word [buffer], 'sr'
   je squareRoot
   ;it's none of the above, so it's operand
+	sub dword [opCounter], 1
 	debugInput
 	checkStackOverflow
   mov ecx, 0  ;stores input length
