@@ -246,6 +246,7 @@ section .data
 	opCounter: dd 0  ;counts all operations, return value of myCalc
 	formatint: db "%d", 10, 0
 	isExsit: dd 0
+	startOfFree: dd 0
 
 section .text
 align 16
@@ -347,6 +348,8 @@ createFirstNode:
 	push 5
 	call malloc
 	mov [currentNode], eax ;in eax the pointer to the memory
+	mov byte [eax], 0
+	mov dword [eax + 1], 0
 	add esp, 4
 	popad
 	hexatoBinary ;in ecx, the index we want to convert, and after this, in dl the converted byte
@@ -376,6 +379,8 @@ createNextNode:
 	push 5
 	call malloc
 	mov [currentNode], eax ;in eax the pointer to the memory
+	mov dword [eax + 1], 0
+	mov byte [eax], 0
 	add esp, 4
 	popad
 	hexatoBinary ;now in dl the byte
@@ -422,6 +427,7 @@ plusAtmosphere:
 	debugResult ;the last operand in stack
 	jmp myCalc
 
+
 plus: ;pop two operands and push the sum of them
 	;IDEA: sum each link into the before last operand's links (override it), and free
 	;the last operand's links
@@ -431,6 +437,7 @@ plus: ;pop two operands and push the sum of them
 	mov ecx, [stackPointer]
 	sub ecx, 1
 	mov eax, [operandStack + 4*ecx]  ;eax holds a pointer to the last inserted operand
+	mov [startOfFree], eax
 	sub ecx, 1
 	mov ebx, [operandStack + 4*ecx]  ;ebx holds a pointer to the before last inserted operand
 	;add ecx, 1
@@ -524,12 +531,14 @@ plus: ;pop two operands and push the sum of them
 			jmp .whileCarry1Again
 	.stopSum:
 		;TODO: free the memory that eax points to
-		mov ebx, [stackPointer]
-		sub ebx, 1
-		mov eax, [operandStack + 4*ebx]  ;eax points to the first link of the list that we want to free
+		;jmp endOfEnd
+		;mov ebx, [stackPointer]
+		;sub ebx, 1
+		;mov eax, [operandStack + 4*ebx]  ;eax points to the first link of the list that we want to free
+		mov eax, [startOfFree]
 		;if we got here, we need to free untill we hit this link
 		freeLoopPlus:
-			cmp eax, [freeUntillNotIncluded]  ;will work if freeUntill... is 0 (untouched) as well
+			cmp eax, dword [freeUntillNotIncluded]  ;will work if freeUntill... is 0 (untouched) as well
 			je endOfEnd
 			mov ebx, [eax+1]   ;save the address of next
 			pushad   ;backup regisers
@@ -630,7 +639,7 @@ duplicate:
 	mov [operandStack + 4*edx], eax    ;insert it to the operand stack
 	jne .nextNode    ;if it has a next node, let's handle it!
 	add dword [stackPointer], 1
-	jmp myCalc              ;else, get the hell out of this method
+	jmp .end              ;else, get the hell out of this method
 	.nextNode:
 		mov ebx, [ebx + 1]   ;ebx is the pointer to the next node
 		pushad   ;backup regisers
@@ -651,6 +660,7 @@ duplicate:
 		cmp [ebx + 1], esi
 		jne .nextNode
 	add dword [stackPointer], 1      ;update the number of operands
+	.end:
 	debugResult
 	jmp myCalc        ;GO HOME YOU PUNK! (now an amazing guitar solo by Dimebag is played)
 
@@ -951,7 +961,7 @@ numOf1Bits:
 			free       ;free the list in eax using macro
 			mov esi, [initStackPointer]
 			mov [stackPointer], esi
-			;mov [operandStack + ecx*4], eax   ;insert it to the operand stack, instead of the prev number
+			debugResult
 			jmp myCalc
 		.checkAndBuildLink:
 			;pre: counter is in edx
