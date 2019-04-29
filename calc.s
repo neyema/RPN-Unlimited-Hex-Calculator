@@ -158,14 +158,61 @@ SYS_EXIT equ 0x01
 
 %macro debugResult 0 ;result is the last operand on stack
 	cmp byte [debugFlag], 0
-	je %%enddebugFlag
+	je %%notdebug
 	mov eax, SYS_WRITE
 	mov	ebx, STDERR		;file descriptor
 	mov ecx, resultDebug
 	mov	edx, 11	;message length
 	int	0x80		;call kernel
 	;TODO: print the top operand in stack
-	%%enddebugFlag:
+	mov ebx, [stackPointer]
+	sub ebx, 1  ;last operand on stack
+	mov eax, [operandStack+4*ebx]
+	push dword 0  ;mark to the end of the nodes
+%%pushop:
+	cmp eax, 0
+	je %%convert
+	push eax
+	mov dword eax, [eax+1]  ;eax<-next
+	jmp %%pushop
+%%convert:
+	pop eax  ;pop address to node
+	cmp eax, 0
+	je %%enddebugFlag  ;the mark to stop
+	mov byte dl, [eax] ;in dl, 2 digits, each one 4 bits
+	shr dl, 4   ;4 bits at left
+	cmp byte dl, 9
+	jle %%.number
+	add byte dl, 55
+	jmp %%.second
+	%%.number:
+		add byte dl, ASCII
+	%%.second:
+		mov byte [charstoprint], dl
+		mov byte dl, [eax] ;now convert the second digit
+		shl dl, 4  ;4 bits at the right
+		shr dl, 4
+		cmp byte dl, 9
+		jle %%.secondisnumber
+		add byte dl, 55
+		jmp %%print
+	%%.secondisnumber:
+		add byte dl, ASCII
+%%print:
+	mov byte [charstoprint+1], dl
+	mov eax, SYS_WRITE
+	mov ebx, STDOUT
+	mov ecx, charstoprint
+	mov edx, 2
+	int 0x80
+	jmp %%convert
+%%enddebugFlag:
+	mov eax, SYS_WRITE
+	mov	ebx, STDOUT		;file descriptor
+	mov ecx, newLine
+	mov	dword edx, 1	;message length
+	int	0x80		;call kernel
+%%notdebug:
 %endmacro
 
 section .bss
