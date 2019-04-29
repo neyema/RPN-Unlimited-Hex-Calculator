@@ -120,6 +120,8 @@ SYS_EXIT equ 0x01
 	sub ecx, 1
 	mov eax, [operandStack+4*ecx]
 	mov ebx, eax ;ebx is prev
+	cmp dword [eax+1], 0
+	je %%endremoveleading0  ;next is 0, so only one node, don't do nothing
 	%%endofoperand:
 		cmp dword [eax+1], 0  ;the last node of this operand
 		je %%check
@@ -132,6 +134,7 @@ SYS_EXIT equ 0x01
 		cmp byte [eax], 0
 		jne %%endremoveleading0
 		mov dword edx, [eax+1]
+		cmp edx, 0
 		mov dword [ebx+1], edx ;prev.next = curr.next
 		free ;freeing the node eax, bc it's zero node, and we remove it from the operand
 		mov eax, [operandStack+4*ecx]
@@ -244,9 +247,13 @@ section .data
 	Y: dd 0 ;pointer to Y of v operation (X*2^(-Y))
 	debugFlag: db 0 ;1 iff debug mode is on
 	opCounter: dd 0  ;counts all operations, return value of myCalc
+<<<<<<< HEAD
 	formatint: db "%d", 10, 0
 	isExsit: dd 0
 	startOfFree: dd 0
+=======
+	formatint: db "%d\n"
+>>>>>>> 2729c0d61cce3549a21c63d7beba61063e77c14d
 
 section .text
 align 16
@@ -277,11 +284,12 @@ main:
 		mov byte [opCounter], 0
 		mov dword [opCounter], 0
 		call myCalc
-	push eax
-	push formatint
-	call printf
-	add esp, 8  ;format is db
-	pop eax
+	;TODO: print myCalc return value
+	;push eax
+	;push formatint
+	;call printf
+	;add esp, 1  ;format is db
+	;pop eax
 
 	popad
 	mov esp, ebp
@@ -303,9 +311,9 @@ myCalc:
   mov dword ecx, buffer
   mov dword edx, INPUT_SIZE
   int 0x80
-	add dword [opCounter], 1 ;operation
   cmp byte [buffer], 'q'
   je quit
+	add dword [opCounter], 1 ;operation counter
   cmp byte [buffer], '+'
   je plusAtmosphere
   cmp byte [buffer], 'p'
@@ -403,7 +411,6 @@ createNextNode:
 	jmp createNextNode        ;go and create more nodes like this beautiful snowflake
 
 quit: ;free all and quit
-	mov dword [isExsit], 1
   mov dword ecx, 0
 	cmp ecx, [stackPointer]
 	je .exit  ;stackPointer =0 means stack is empty
@@ -420,10 +427,6 @@ quit: ;free all and quit
 plusAtmosphere:
 	;So main can use plus without call it. Main will jump here
 	call plus
-	cmp dword [isExsit], 1
-	jne .cont
-	ret
-	.cont:
 	debugResult ;the last operand in stack
 	jmp myCalc
 
@@ -561,18 +564,50 @@ popAndPrint:  ;pop one operand and print it's value to STDOUT
 	checkStackUnderflow 1
 	mov ebx, [stackPointer]
 	sub ebx, 1
-	mov [stackPointer], ebx
+	mov [stackPointer], ebx ;pop operand
 	mov eax, [operandStack+4*ebx]
 	push dword 0  ;mark to the end of the nodes
+firstnode:
+	mov byte dl, [eax] ;in dl, 2 digits, each one 4 bits
+	shr dl, 4   ;4 bits at left
+	cmp byte dl, 9
+	jle .number
+	add byte dl, 55
+	jmp .second
+	.number:
+		add byte dl, ASCII
+	.second:
+		mov byte [charstoprint], dl
+		cmp byte dl, 48 ;48 is '0'
+		jne push  ;regular!!!
+		mov byte dl, [eax] ;now convert the second digit
+		shl dl, 4  ;4 bits at the right
+		shr dl, 4
+		cmp byte dl, 9
+		jle .secondisnumber
+		add byte dl, 55
+		jmp .print
+	.secondisnumber:
+		add byte dl, ASCII
+	.print: ;the first char is zero, so print just the second
+		mov byte [charstoprint+1], dl
+		mov eax, SYS_WRITE
+		mov ebx, STDOUT
+		mov ecx, charstoprint+1
+		mov dword edx, 1
+		int 0x80
+	mov ebx, [stackPointer]
+	mov eax, [operandStack+4*ebx]
+	mov dword eax, [eax+1]
 push:
-	cmp eax, 0
+	cmp dword eax, 0
 	je convert
 	push eax
 	mov dword eax, [eax+1]  ;eax<-next
 	jmp push
 convert:
 	pop eax  ;pop address to node
-	cmp eax, 0
+	cmp dword eax, 0
 	je end  ;the mark to stop
 	mov byte dl, [eax] ;in dl, 2 digits, each one 4 bits
 	shr dl, 4   ;4 bits at left
@@ -607,7 +642,7 @@ end:
 	mov ecx, newLine
 	mov	dword edx, 1	;message length
 	int	0x80		;call kernel
-	;pop operand
+	;free operand
 	mov dword ebx, [stackPointer]
 	mov eax, [operandStack+4*ebx]
 	free ;for free, in eax the address to the first node of the operand
