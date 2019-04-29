@@ -197,7 +197,8 @@ section .data
 	Y: dd 0 ;pointer to Y of v operation (X*2^(-Y))
 	debugFlag: db 0 ;1 iff debug mode is on
 	opCounter: dd 0  ;counts all operations, return value of myCalc
-	formatint: db "%d\n"
+	formatint: db "%d", 10, 0
+	isExsit: dd 0
 
 section .text
 align 16
@@ -228,12 +229,11 @@ main:
 		mov byte [opCounter], 0
 		mov dword [opCounter], 0
 		call myCalc
-	;TODO: print myCalc return value
-	;push eax
-	;push formatint
-	;call printf
-	;add esp, 1  ;format is db
-	;pop eax
+	push eax
+	push formatint
+	call printf
+	add esp, 8  ;format is db
+	pop eax
 
 	popad
 	mov esp, ebp
@@ -351,6 +351,7 @@ createNextNode:
 	jmp createNextNode        ;go and create more nodes like this beautiful snowflake
 
 quit: ;free all and quit
+	mov dword [isExsit], 1
   mov dword ecx, 0
 	cmp ecx, [stackPointer]
 	je .exit  ;stackPointer =0 means stack is empty
@@ -367,6 +368,10 @@ quit: ;free all and quit
 plusAtmosphere:
 	;So main can use plus without call it. Main will jump here
 	call plus
+	cmp dword [isExsit], 1
+	jne .cont
+	ret
+	.cont:
 	debugResult ;the last operand in stack
 	jmp myCalc
 
