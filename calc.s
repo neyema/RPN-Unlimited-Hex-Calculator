@@ -521,7 +521,6 @@ plus: ;pop two operands and push the sum of them
 		;TODO: free the memory that eax points to
 		mov ebx, [stackPointer]
 		sub ebx, 1
-		jmp endOfEnd
 		mov eax, [operandStack + 4*ebx]  ;eax points to the first link of the list that we want to free
 		;if we got here, we need to free untill we hit this link
 		freeLoopPlus:
