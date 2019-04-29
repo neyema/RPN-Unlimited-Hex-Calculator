@@ -227,10 +227,10 @@ section .bss
 section .rodata
   calcPrompt: db "calc: ",0
   invalidInput: db "Error: Invalid Input!",10,0
-	wrongYvalue: db "Error: wrong Y value",10,0  ;print when Y>200
+	wrongYvalue: db "wrong Y value",10,0  ;print when Y>200
   stackOverflow: db "Error: Operand Stack Overflow",10,0
   stackUnderflow: db "Error: Insufficient Number of Arguments on Stack",10,0
-	yBigger200Msg: db "Error: Y>200", 10, 0   ;TODO: CHANGE IT TO AS THEY WANT
+	yBigger200Msg: db "wrong Y value", 10, 0   ;TODO: CHANGE IT TO AS THEY WANT
 	newLine: db "",10,0
 	inputDebug: db "input is: ",0
 	resultDebug: db "result is: ",0
@@ -247,13 +247,9 @@ section .data
 	Y: dd 0 ;pointer to Y of v operation (X*2^(-Y))
 	debugFlag: db 0 ;1 iff debug mode is on
 	opCounter: dd 0  ;counts all operations, return value of myCalc
-<<<<<<< HEAD
 	formatint: db "%d", 10, 0
 	isExsit: dd 0
 	startOfFree: dd 0
-=======
-	formatint: db "%d\n"
->>>>>>> 2729c0d61cce3549a21c63d7beba61063e77c14d
 
 section .text
 align 16
@@ -285,11 +281,11 @@ main:
 		mov dword [opCounter], 0
 		call myCalc
 	;TODO: print myCalc return value
-	;push eax
-	;push formatint
-	;call printf
-	;add esp, 1  ;format is db
-	;pop eax
+	push eax
+	push formatint
+	call printf
+	add esp, 4  ;format is db
+	pop eax
 
 	popad
 	mov esp, ebp
@@ -431,7 +427,6 @@ plusAtmosphere:
 	debugResult ;the last operand in stack
 	jmp myCalc
 
-
 plus: ;pop two operands and push the sum of them
 	;IDEA: sum each link into the before last operand's links (override it), and free
 	;the last operand's links
@@ -535,7 +530,7 @@ plus: ;pop two operands and push the sum of them
 			jmp .whileCarry1Again
 	.stopSum:
 		;TODO: free the memory that eax points to
-		;jmp endOfEnd
+		jmp endOfEnd
 		;mov ebx, [stackPointer]
 		;sub ebx, 1
 		;mov eax, [operandStack + 4*ebx]  ;eax points to the first link of the list that we want to free
