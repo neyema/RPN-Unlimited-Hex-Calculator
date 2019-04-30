@@ -95,7 +95,7 @@ SYS_EXIT equ 0x01
 	%%endhexatoBinary:
 %endmacro
 
-%macro free 0  ;in eax the address to the fisrt node of the operand
+%macro freeMac 0  ;in eax the address to the fisrt node of the operand
 	%%freeLoop:
 		cmp eax, 0
 		je %%endfree
@@ -136,7 +136,7 @@ SYS_EXIT equ 0x01
 		mov dword edx, [eax+1]
 		cmp edx, 0
 		mov dword [ebx+1], edx ;prev.next = curr.next
-		free ;freeing the node eax, bc it's zero node, and we remove it from the operand
+		freeMac ;freeing the node eax, bc it's zero node, and we remove it from the operand
 		mov eax, [operandStack+4*ecx]
 		mov ebx, eax ;ebx is prev
 		jmp %%endofoperand
@@ -413,7 +413,7 @@ quit: ;free all and quit
 	je .exit  ;stackPointer =0 means stack is empty
   .freeLoop:
     mov dword eax, [operandStack + 4*ecx]
-    free
+    freeMac
     add ecx, 1
 		cmp ecx, [stackPointer]
 		jl .freeLoop
@@ -512,8 +512,8 @@ plus: ;pop two operands and push the sum of them
 		;the list in ebx does not have a next
 		;IDEA: will make the next of the list in ebx the list in eax, and release all the links
 		;before the next of curr link in eax
-		mov [freeUntillNotIncluded], eax  ;we need to free eax's link untill that link
 		mov eax, [eax + 1]      ;get eax's next
+		mov [freeUntillNotIncluded], eax  ;we need to free eax's link untill that link
 		mov [ebx + 1], eax     ;now the next of the link in ebx is the list that eax holds
 		.whileCarry1Again:
 			cmp edi, 0
@@ -530,7 +530,7 @@ plus: ;pop two operands and push the sum of them
 			jmp .whileCarry1Again
 	.stopSum:
 		;TODO: free the memory that eax points to
-		jmp endOfEnd
+		;jmp endOfEnd
 		;mov ebx, [stackPointer]
 		;sub ebx, 1
 		;mov eax, [operandStack + 4*ebx]  ;eax points to the first link of the list that we want to free
@@ -641,7 +641,7 @@ end:
 	;free operand
 	mov dword ebx, [stackPointer]
 	mov eax, [operandStack+4*ebx]
-	free ;for free, in eax the address to the first node of the operand
+	freeMac ;for free, in eax the address to the first node of the operand
 	jmp myCalc
 
 duplicate:
@@ -800,7 +800,7 @@ power:
 		mov ebx, [stackPointer]
 		sub ebx, 2   ;Y is the before last
 		mov eax, [operandStack + 4*ebx]  ;eax is the pointer to Y's first link
-		free    ;free Y using free macro
+		freeMac    ;free Y using free macro
 		;reduce stackPointer by 1 after we free Y
 		mov eax, [stackPointer]
 		sub eax, 1
@@ -876,7 +876,7 @@ powerMinus:
 		mov ebx, [operandStack+4*ecx+4] ;in ebx the pointer to X
 		mov [operandStack+4*ecx], ebx ;replaced Y with X  in the stack (X will hold the result)
 		mov dword eax, [Y]
-		free
+		freeMac
 		add ecx, 1 ;now ecx is the old index of X in the stack
 		mov [stackPointer], ecx ;ecx = old stackPointer -1, pop Y and move X one slot down in the stack
 		debugResult
@@ -989,7 +989,7 @@ numOf1Bits:
 			;mov ecx, [stackPointer]
 			;sub ecx, 1
 			mov eax, [replacedList]
-			free       ;free the list in eax using macro
+			freeMac       ;free the list in eax using macro
 			mov esi, [initStackPointer]
 			mov [stackPointer], esi
 			debugResult
