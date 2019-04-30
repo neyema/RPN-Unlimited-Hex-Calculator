@@ -1,5 +1,5 @@
 STACK_SIZE equ 5
-INPUT_SIZE equ 80
+INPUT_SIZE equ 82
 ASCII equ 48
 
 STDIN equ 0
@@ -136,13 +136,7 @@ SYS_EXIT equ 0x01
 		mov dword edx, [eax+1]
 		cmp edx, 0
 		mov dword [ebx+1], edx ;prev.next = curr.next
-		pushad
-		pushfd
-		push eax
-		call free ;freeing the node eax, bc it's zero node, and we remove it from the operand
-		add esp, 1
-		popfd
-		popad
+		freeMac ;freeing the node eax, bc it's zero node, and we remove it from the operand
 		mov eax, [operandStack+4*ecx]
 		mov ebx, eax ;ebx is prev
 		jmp %%endofoperand
@@ -569,24 +563,24 @@ popAndPrint:  ;pop one operand and print it's value to STDOUT
 	mov [stackPointer], ebx ;pop operand
 	mov eax, [operandStack+4*ebx]
 	push dword 0  ;mark to the end of the nodes
+push:
+	cmp dword eax, 0
+	je firstnode
+	push eax
+	mov dword eax, [eax+1]  ;eax<-next
+	jmp push
 firstnode:
-	cmp dword [eax+1], 0
-	je .convert  ;last node
-	mov dword eax, [eax+1]
-	jmp firstnode
-	.convert:
-		mov byte dl, [eax] ;in dl, 2 digits, each one 4 bits
-		shr dl, 4   ;4 bits at left
-		cmp byte dl, 9
-		jle .number
-		add byte dl, 55
-		jmp .second
+	pop eax
+	mov byte dl, [eax] ;in dl, 2 digits, each one 4 bits
+	shr dl, 4   ;4 bits at left
+	cmp byte dl, 9
+	jle .number
+	add byte dl, 55
+	jmp .second
 	.number:
 		add byte dl, ASCII
 	.second:
 		mov byte [charstoprint], dl
-		cmp byte dl, 48 ;48 is '0'
-		jne push  ;regular!!!
 		mov byte dl, [eax] ;now convert the second digit
 		shl dl, 4  ;4 bits at the right
 		shr dl, 4
@@ -598,20 +592,20 @@ firstnode:
 		add byte dl, ASCII
 	.print: ;the first char is zero, so print just the second
 		mov byte [charstoprint+1], dl
+		mov byte dl, [charstoprint]
+		cmp byte dl, 48 ;48 is '0'
+		je .printone  ;if equal, the first char is 0 so print only the second
+		mov eax, SYS_WRITE
+		mov ebx, STDOUT
+		mov ecx, charstoprint
+		mov dword edx, 2
+		int 0x80
+	.printone:
 		mov eax, SYS_WRITE
 		mov ebx, STDOUT
 		mov ecx, charstoprint+1
 		mov dword edx, 1
 		int 0x80
-	mov ebx, [stackPointer]
-	mov eax, [operandStack+4*ebx]
-	mov dword eax, [eax+1]
-push:
-	cmp dword eax, 0
-	je convert
-	push eax
-	mov dword eax, [eax+1]  ;eax<-next
-	jmp push
 convert:
 	pop eax  ;pop address to node
 	cmp dword eax, 0
@@ -654,7 +648,6 @@ end:
 	mov eax, [operandStack+4*ebx]
 	freeMac ;for free, in eax the address to the first node of the operand
 	jmp myCalc
-
 
 duplicate:
   ;push to the stack a copy of the top operand in the stack
