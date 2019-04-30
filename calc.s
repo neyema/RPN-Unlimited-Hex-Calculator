@@ -136,7 +136,13 @@ SYS_EXIT equ 0x01
 		mov dword edx, [eax+1]
 		cmp edx, 0
 		mov dword [ebx+1], edx ;prev.next = curr.next
-		freeMac ;freeing the node eax, bc it's zero node, and we remove it from the operand
+		pushad
+		pushfd
+		push eax
+		call free ;freeing the node eax, bc it's zero node, and we remove it from the operand
+		add esp, 1
+		popfd
+		popad
 		mov eax, [operandStack+4*ecx]
 		mov ebx, eax ;ebx is prev
 		jmp %%endofoperand
@@ -564,12 +570,17 @@ popAndPrint:  ;pop one operand and print it's value to STDOUT
 	mov eax, [operandStack+4*ebx]
 	push dword 0  ;mark to the end of the nodes
 firstnode:
-	mov byte dl, [eax] ;in dl, 2 digits, each one 4 bits
-	shr dl, 4   ;4 bits at left
-	cmp byte dl, 9
-	jle .number
-	add byte dl, 55
-	jmp .second
+	cmp dword [eax+1], 0
+	je .convert  ;last node
+	mov dword eax, [eax+1]
+	jmp firstnode
+	.convert:
+		mov byte dl, [eax] ;in dl, 2 digits, each one 4 bits
+		shr dl, 4   ;4 bits at left
+		cmp byte dl, 9
+		jle .number
+		add byte dl, 55
+		jmp .second
 	.number:
 		add byte dl, ASCII
 	.second:
@@ -643,6 +654,7 @@ end:
 	mov eax, [operandStack+4*ebx]
 	freeMac ;for free, in eax the address to the first node of the operand
 	jmp myCalc
+
 
 duplicate:
   ;push to the stack a copy of the top operand in the stack
