@@ -1,5 +1,5 @@
 STACK_SIZE equ 5
-INPUT_SIZE equ 80
+INPUT_SIZE equ 82
 ASCII equ 48
 
 STDIN equ 0
