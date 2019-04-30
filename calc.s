@@ -214,7 +214,7 @@ SYS_EXIT equ 0x01
 	mov	ebx, STDOUT		;file descriptor
 	mov ecx, newLine
 	mov	dword edx, 1	;message length
-	int	0x80		;call kernel
+	int	0x80		;call kernellllllll
 %%notdebug:
 %endmacro
 
