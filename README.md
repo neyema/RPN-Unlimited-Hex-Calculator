@@ -1,5 +1,5 @@
 # UnsignedHexaCalc
-The operations supported by your calculator:
+The operations supported by your calculator: /n
 'q' – quit
 '+' – unsigned addition (pop two operands from operand stack, and push one result, their sum)
 'p' – pop-and-print (pop one operand from the operand stack, and print its value to stdout)
