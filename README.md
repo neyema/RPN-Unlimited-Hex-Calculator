@@ -8,6 +8,3 @@ The operations supported by your calculator:
 'v' – X*2^(-Y), with X and Y as above.
 'n' – number of '1' bits (pop one operand from the operand stack, and push one result)
 'sr' – square root (pop one operand from the operand stack, and push one result)
-
-
-Debug Option “-d” command line argument
